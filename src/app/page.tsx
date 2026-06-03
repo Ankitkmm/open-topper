@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -7,15 +6,14 @@ import {
   BrainCircuit,
   CheckCircle2,
   Compass,
-  Mail,
+  Layers3,
   Search,
   Target,
 } from "lucide-react";
 import { AuthControls } from "@/components/auth/AuthControls";
-import { ActivityHeatmap } from "@/components/marketing/ActivityHeatmap";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingShell";
 import { SITE_NAME, SITE_DOMAIN, WAITLIST_LINK } from "@/lib/marketing";
-import { getOfficialPyqStats } from "@/lib/official-pyqs";
+import { getOfficialPyqStats, getOfficialSubjectPyqs } from "@/lib/official-pyqs";
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} | Track prep, search PYQs, revise smarter`,
@@ -70,14 +68,16 @@ const FREE_FEATURES = [
 ];
 
 const PLUS_FEATURES = [
-  "Personalised agentic tracking of progress",
-  "Smarter revision nudges based on your study trail",
+  "Personalised revision tracking and memory cues",
+  "Smarter nudges on what to revisit next",
   "Deeper topic-to-topic recall support",
-  "Early access to future mentor and agent workflows",
+  "Early access to future agent workflows",
 ];
 
 export default function LandingPage() {
   const stats = loadStats();
+  const featuredCard = getOfficialSubjectPyqs("gs1", "", 1)[0];
+  const relatedQuestions = featuredCard?.relevantQuestions.slice(0, 2) || [];
 
   return (
     <main className="library-page min-h-screen overflow-hidden">
@@ -102,22 +102,22 @@ export default function LandingPage() {
         <section className="mx-auto grid max-w-7xl gap-10 px-5 pb-10 pt-4 sm:px-8 lg:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)] lg:gap-14 lg:px-10 lg:pb-16 lg:pt-8">
           <div className="pt-6 sm:pt-10">
             <div className="study-badge study-badge-accent">Now live on {SITE_DOMAIN}</div>
-            <h1 className="mt-6 max-w-5xl text-5xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-6xl lg:text-8xl">
-              Your UPSC prep, finally in one place.
+            <h1 className="mt-6 max-w-4xl text-4xl font-semibold leading-[0.98] tracking-[-0.05em] sm:text-5xl lg:text-[5.9rem]">
+              Search PYQs, study topper thinking, and keep revision on track.
             </h1>
             <p className="mt-6 max-w-3xl text-base leading-8 text-secondary sm:text-lg">
-              {SITE_NAME} is built for aspirants who want PYQs, topper thinking, and progress
-              tracking in one workflow instead of juggling scattered PDFs, notes, Telegram links,
-              and half-remembered bookmarks.
+              {SITE_NAME} gives aspirants one workspace for past year questions, relevant topper
+              material, and lightweight progress tracking instead of scattered PDFs, notes,
+              Telegram links, and half-remembered bookmarks.
             </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/browse" className="btn-primary">
+            <div className="mt-8 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap">
+              <Link href="/browse" className="btn-primary w-full sm:w-auto">
                 Browse all questions <ArrowRight size={15} aria-hidden="true" />
               </Link>
-              <a href={WAITLIST_LINK} className="btn-secondary">
-                Join waitlist <Mail size={15} aria-hidden="true" />
-              </a>
+              <Link href="/gs1" className="btn-secondary w-full sm:w-auto">
+                Open GS I workspace <ArrowRight size={15} aria-hidden="true" />
+              </Link>
               <AuthControls />
             </div>
 
@@ -165,41 +165,92 @@ export default function LandingPage() {
               />
               <div className="relative flex items-start justify-between gap-4">
                 <div>
-                  <div className="overline">Your recent study pattern</div>
+                  <div className="overline">Inside the workspace</div>
                   <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-                    Track your prep and revision rhythm
+                    A live PYQ workflow, not just a static library
                   </h2>
                 </div>
-                <div className="relative hidden h-24 w-24 shrink-0 rounded-[28px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_86%,transparent)] text-[var(--accent-strong)] sm:grid sm:place-items-center">
-                  <Image
-                    src="/brand/cat-silhouette.svg"
-                    alt=""
-                    width={58}
-                    height={58}
-                    className="translate-x-[2px] translate-y-[2px] opacity-90"
-                    style={{ height: "auto" }}
-                  />
+                <div className="hidden shrink-0 rounded-[22px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_86%,transparent)] px-3 py-2 text-xs font-semibold text-secondary sm:inline-flex sm:items-center sm:gap-2">
+                  <Layers3 size={14} aria-hidden="true" />
+                  Live preview
                 </div>
               </div>
 
-              <div className="mt-5 rounded-[28px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_82%,transparent)] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.08)]">
-                <ActivityHeatmap />
+              <div className="mt-5 rounded-[28px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_82%,transparent)] p-5 shadow-[0_18px_48px_rgba(0,0,0,0.08)]">
+                {featuredCard ? (
+                  <div className="grid gap-4">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                      <span className="study-badge">{featuredCard.paper}</span>
+                      {featuredCard.estimatedYear && <span className="study-badge">{featuredCard.estimatedYear}</span>}
+                      {featuredCard.marks && <span className="study-badge">{featuredCard.marks} marks</span>}
+                      <span className="study-badge study-badge-accent">{featuredCard.relevantQuestionCount} relevant questions</span>
+                      <span className="study-badge">{featuredCard.topperCount} answer links</span>
+                    </div>
+
+                    <div>
+                      <h3 className="max-w-3xl text-[1.65rem] font-semibold leading-tight tracking-[-0.03em] text-[var(--question)] sm:text-[2rem]">
+                        {featuredCard.question}
+                      </h3>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {featuredCard.keywords.slice(0, 4).map((keyword) => (
+                          <span key={keyword} className="study-badge">
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-[22px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_74%,transparent)] p-4">
+                        <div className="overline">What you can do</div>
+                        <div className="mt-3 grid gap-2 text-sm leading-7 text-secondary">
+                          <span>Search by topic, issue, or paper.</span>
+                          <span>Open linked topper material with context.</span>
+                          <span>Mark progress without overcomplicating the workflow.</span>
+                        </div>
+                      </div>
+                      <div className="rounded-[22px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_74%,transparent)] p-4">
+                        <div className="overline">Related question trail</div>
+                        <div className="mt-3 grid gap-3">
+                          {relatedQuestions.length > 0 ? (
+                            relatedQuestions.map((question) => (
+                              <div key={question.id} className="rounded-[18px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_88%,transparent)] px-3 py-3 text-sm leading-6 text-secondary">
+                                <div className="font-semibold text-primary">{question.question}</div>
+                                <div className="mt-1 text-xs text-muted">
+                                  {question.topperCount} linked copies · {question.sourceAvailableCount} source pages
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-[18px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_88%,transparent)] px-3 py-3 text-sm leading-6 text-secondary">
+                              Open a paper and follow related questions, answer signals, and source trails from the same workspace.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm leading-7 text-secondary">
+                    Open a paper, search by topic, and move through related PYQs and topper material without leaving the workspace.
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <PreviewCard
-                  title="Counts study actions"
-                  detail="Question views, topic clicks, revision actions, and source opens all show up as activity."
+                  title="Follow question trails"
+                  detail="Move from a PYQ to related questions, answer signals, and useful source pages from the same screen."
                   icon={BookOpen}
                 />
                 <PreviewCard
-                  title="Shows gaps early"
-                  detail="It becomes easier to spot which days had momentum and which topics are slipping out of revision."
+                  title="See revision gaps"
+                  detail="Track what got studied, what got skipped, and which topics need to come back into revision."
                   icon={Compass}
                 />
                 <PreviewCard
-                  title="Keeps it simple"
-                  detail="A lightweight progress layer keeps the signal useful instead of turning prep into another dashboard."
+                  title="Keep prep practical"
+                  detail="The product is built to stay useful for daily prep, not to impress with extra panels and noise."
                   icon={CheckCircle2}
                 />
               </div>
