@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Build outputs
+.next/
+out/
+build/
+
+# Large data (not needed in container if mounted as volumes)
+local-pdfs/
+UPSC_topper_md/
+extracted_data/
+data/
+data-sources/
+Copy of *.xlsx
+upscpath.com.har
+upscpath2.com.har
+hermes-agent-main/
+
+# Dev files
+.git/
+.gitignore
+*.md
+!CONTEXT.md
+.eslint*
+postcss.config.mjs
+scripts/
+.env*
+!.env.example
+
+# OS files
+.DS_Store
+*.pem

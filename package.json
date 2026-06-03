@@ -1,0 +1,45 @@
+{
+  "name": "open-topper",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "build-data": "tsx scripts/build-data.ts",
+    "preprocess": "tsx scripts/preprocess.ts",
+    "download-pdfs": "tsx scripts/download-pdfs.ts",
+    "build-entities": "tsx scripts/build-entities.ts",
+    "build-ocr": "tsx scripts/build-ocr-links.ts",
+    "build-themes": "tsx scripts/build-themes.ts",
+    "build-vault": "tsx scripts/build-vault.ts",
+    "build-pyqs": "node scripts/build-pyq-app-data.js && tsx scripts/build-official-pyq-links.ts",
+    "build-official-links": "tsx scripts/build-official-pyq-links.ts",
+    "build-all": "tsx scripts/build-entities.ts && tsx scripts/build-ocr-links.ts && tsx scripts/build-themes.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1057.0",
+    "@aws-sdk/lib-storage": "^3.1057.0",
+    "clsx": "^2.1.1",
+    "dotenv": "^17.4.2",
+    "lucide-react": "^1.17.0",
+    "next": "^16.2.6",
+    "next-auth": "^5.0.0-beta.31",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.22.3",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>
+            Hermes Agent — The Agent That Grows With You | Nous Research
+        </title>
+        <meta
+            name="description"
+            content="An open-source agent that grows with you — learns your projects, builds its own skills, and reaches you wherever you are. By Nous Research."
+        />
+        <meta
+            property="og:title"
+            content="Hermes Agent — The Agent That Grows With You"
+        />
+        <meta
+            property="og:description"
+            content="An open-source agent that grows with you. Install it, give it your messaging accounts, and it becomes a persistent personal agent."
+        />
+        <meta property="og:image" content="./img/og-image.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta
+            name="twitter:title"
+            content="Hermes Agent — The Agent That Grows With You"
+        />
+        <meta
+            name="twitter:description"
+            content="An open-source agent that grows with you. Install it, give it your messaging accounts, and it becomes a persistent personal agent."
+        />
+        <meta name="twitter:image" content="./img/og-image.png" />
+        <link
+            rel="icon"
+            href="./img/favicon.ico"
+            sizes="256x256"
+            type="image/x-icon"
+        />
+        <link rel="icon" href="./img/icon.png" sizes="48x48" type="image/png" />
+        <link rel="stylesheet" href="./styles.css" />
+    </head>
+    <body
+        class="sansfont_62bfa78c-module__ZUATLa__variable courier_prime_a517a4e2-module__Qoz-jq__variable rulescompressed_465156ca-module__19_rRG__variable rulesexpanded_1a838af1-module__nftcQq__variable mondwestfont_73e87ef1-module__yGPCHa__variable text-midground font-mondwest bg-black uppercase antialiased"
+    >
+        <div
+            class="pointer-events-none fixed inset-0"
+            style="
+                background-color: color-mix(in srgb, #ffffff 0%, transparent);
+                mix-blend-mode: difference;
+                z-index: 100;
+            "
+        ></div>
+        <div
+            class="pointer-events-none fixed inset-0"
+            style="mix-blend-mode: difference; opacity: 0.033; z-index: 2"
+        >
+            <img
+                alt=""
+                class="h-[150dvh] w-auto min-w-dvw object-cover object-top-left invert"
+                fetchpriority="low"
+                src="./img/filler-bg.webp"
+            />
+        </div>
+        <div
+            class="pointer-events-none fixed inset-0"
+            style="
+                background-color: color-mix(in srgb, #041c1c 100%, transparent);
+                mix-blend-mode: difference;
+                z-index: 1;
+            "
+        ></div>
+        <canvas
+            class="h-full w-full pointer-events-none fixed inset-0"
+            style="mix-blend-mode: color-dodge; z-index: 101"
+        ></canvas>
+        <div
+            class="h-full w-full pointer-events-none fixed inset-0"
+            style="
+                background: radial-gradient(
+                    ellipse at 0% 0%,
+                    rgba(255, 189, 56, 0) 60%,
+                    rgba(255, 189, 56, 0.35) 100%
+                );
+                mix-blend-mode: lighten;
+                opacity: 0.22;
+                z-index: 99;
+            "
+        ></div>
+        <canvas
+            class="h-full w-full pointer-events-none fixed inset-0"
+            style="mix-blend-mode: difference; z-index: 201"
+        ></canvas>
+
+        <main class="relative z-2 mx-auto max-w-[1600px] p-8">
+            <header>
+                <div class="g hidden border-t border-b lg:grid">
+                    <a class="gc" href="#">
+                        <h2
+                            style="mix-blend-mode: plus-lighter"
+                            class="font-sans text-[2.625rem] leading-[1] tracking-[0.0525rem] font-bold"
+                        >
+                            Hermes<br />Agent
+                        </h2>
+                    </a>
+                    <a class="gc group relative cursor-pointer" href="#">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                            >Docs<span
+                                class="blink hidden group-hover:inline-block dither ml-1 w-[1.2ch] -mb-[0.15em] h-[1.1em]"
+                            ></span
+                        ></small>
+                        <span
+                            class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                        ></span>
+                    </a>
+                    <a
+                        href="https://portal.nousresearch.com/"
+                        rel="noopener noreferrer"
+                        target="_blank"
+                        class="gc group relative cursor-pointer"
+                    >
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                            >Portal<span
+                                class="blink hidden group-hover:inline-block dither ml-1 w-[1.2ch] -mb-[0.15em] h-[1.1em]"
+                            ></span
+                        ></small>
+                        <span
+                            class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                        ></span>
+                    </a>
+                    <div class="gc flex items-start justify-between">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-50"
+                            >Socials</small
+                        >
+                        <div class="flex items-center gap-3">
+                            <a
+                                class="opacity-60 transition-opacity hover:opacity-100"
+                                href="https://github.com/NousResearch/hermes-agent"
+                                rel="noopener noreferrer"
+                                target="_blank"
+                                title="GitHub"
+                                ><svg
+                                    class="size-4"
+                                    fill="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"
+                                    ></path></svg
+                            ></a>
+                            <a
+                                class="opacity-60 transition-opacity hover:opacity-100"
+                                href="https://discord.gg/NousResearch"
+                                rel="noopener noreferrer"
+                                target="_blank"
+                                title="Discord"
+                                ><svg
+                                    class="size-4"
+                                    fill="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"
+                                    ></path></svg
+                            ></a>
+                        </div>
+                    </div>
+                    <div class="gc flex items-start justify-between">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-50"
+                            >Theme</small
+                        >
+                        <button
+                            aria-label="Switch to dark mode"
+                            class="relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-current/25 bg-current/8 transition-colors hover:bg-current/15"
+                            type="button"
+                        >
+                            <svg
+                                class="absolute left-1 size-3.5 opacity-40"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="12" r="5"></circle>
+                                <path
+                                    d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                                ></path>
+                            </svg>
+                            <svg
+                                class="absolute right-1 size-3.5 opacity-40"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+                                ></path>
+                            </svg>
+                            <span
+                                aria-hidden="true"
+                                class="bg-midground absolute size-4 rounded-full transition-transform duration-200 ease-out"
+                                style="transform: translateX(2px)"
+                            ></span>
+                        </button>
+                    </div>
+                </div>
+                <div
+                    class="flex items-center justify-between border border-current/20 p-4 lg:hidden"
+                >
+                    <a href="#">
+                        <h2
+                            style="mix-blend-mode: plus-lighter"
+                            class="font-sans text-[2.625rem] leading-[1] tracking-[0.0525rem] font-bold"
+                        >
+                            Hermes<br />Agent
+                        </h2>
+                    </a>
+                    <div class="flex items-center gap-3">
+                        <button
+                            aria-label="Switch to dark mode"
+                            class="relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-current/25 bg-current/8 transition-colors hover:bg-current/15"
+                            type="button"
+                        >
+                            <svg
+                                class="absolute left-1 size-3.5 opacity-40"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                            >
+                                <circle cx="12" cy="12" r="5"></circle>
+                                <path
+                                    d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+                                ></path>
+                            </svg>
+                            <svg
+                                class="absolute right-1 size-3.5 opacity-40"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+                                ></path>
+                            </svg>
+                            <span
+                                aria-hidden="true"
+                                class="bg-midground absolute size-4 rounded-full transition-transform duration-200 ease-out"
+                                style="transform: translateX(2px)"
+                            ></span>
+                        </button>
+                        <button
+                            aria-label="Open menu"
+                            class="relative z-50 cursor-pointer bg-transparent p-2"
+                            type="button"
+                        >
+                            <svg
+                                class="size-5"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-width="1.5"
+                                viewBox="0 0 24 24"
+                            >
+                                <line
+                                    class="origin-center transition-transform duration-200 ease-out"
+                                    style="transform: translateY(-4px)"
+                                    x1="4"
+                                    x2="20"
+                                    y1="12"
+                                    y2="12"
+                                ></line>
+                                <line
+                                    class="transition-opacity duration-200 ease-out"
+                                    style="opacity: 1"
+                                    x1="4"
+                                    x2="20"
+                                    y1="12"
+                                    y2="12"
+                                ></line>
+                                <line
+                                    class="origin-center transition-transform duration-200 ease-out"
+                                    style="transform: translateY(4px)"
+                                    x1="4"
+                                    x2="20"
+                                    y1="12"
+                                    y2="12"
+                                ></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="g">
+                <div
+                    class="gc flex flex-col items-center justify-center gap-6 py-16 text-center md:py-24"
+                >
+                    <div style="opacity: 1">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem] mb-4 opacity-70"
+                            >Open Source &bull; MIT License</small
+                        >
+                        <span
+                            style="mix-blend-mode: plus-lighter"
+                            class="font-expanded block text-4xl font-bold"
+                            >The Agent That<br />Grows With You.</span
+                        >
+                    </div>
+                    <div class="max-w-[520px]">
+                        <p
+                            class="text-[1.125rem] leading-relaxed tracking-normal normal-case opacity-60"
+                        >
+                            Not a coding copilot tethered to an IDE or a chatbot
+                            wrapper around a single API. An autonomous agent
+                            that lives on your server, remembers what it learns,
+                            and gets more capable the longer it runs.
+                        </p>
+                    </div>
+                    <div
+                        class="flex w-full max-w-[520px] flex-col items-center gap-4"
+                    >
+                        <div class="flex w-full flex-col gap-6 text-left">
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center justify-between">
+                                    <small
+                                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-50"
+                                        >1. Install</small
+                                    >
+                                    <button
+                                        class="font-courier cursor-pointer border-none bg-transparent text-xs tracking-widest hover:text-midground tap-highlight-transparent transition-colors flex items-center justify-center text-text-secondary"
+                                        type="button"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                <div
+                                    class="bg-background/40 font-courier border border-current/20 px-3 py-2 text-[0.6875rem] leading-relaxed lowercase"
+                                >
+                                    <code class="break-all"
+                                        >curl -fsSL
+                                        https://hermes-agent.nousresearch.com/install.sh
+                                        | bash</code
+                                    >
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <div class="flex items-center justify-between">
+                                    <small
+                                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-50"
+                                        >2. Configure</small
+                                    >
+                                    <button
+                                        class="font-courier cursor-pointer border-none bg-transparent text-xs tracking-widest hover:text-midground tap-highlight-transparent transition-colors flex items-center justify-center text-text-secondary"
+                                        type="button"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                <div
+                                    class="bg-background/40 font-courier border border-current/20 px-3 py-2 text-[0.6875rem] leading-relaxed lowercase"
+                                >
+                                    <code class="break-all">hermes setup</code>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="demo" class="g">
+                <div class="gc col-span-full lg:col-span-1">
+                    <hgroup class="flex flex-col gap-2">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                            ><span class="font-expanded font-bold"
+                                >See It in Action</span
+                            ></small
+                        >
+                    </hgroup>
+                    <div class="mt-3">
+                        <div
+                            aria-label="Terminal Demo"
+                            class="border-4 border-double border-inherit"
+                            role="img"
+                        >
+                            <div
+                                class="flex items-center gap-3 border-b border-current/10 px-3 py-2"
+                            >
+                                <div class="flex gap-1.5">
+                                    <span
+                                        class="bg-midground size-2 rounded-full"
+                                        style="mix-blend-mode: plus-lighter"
+                                    ></span>
+                                    <span
+                                        class="bg-midground/60 size-2 rounded-full"
+                                    ></span>
+                                    <span
+                                        class="bg-midground/30 size-2 rounded-full"
+                                    ></span>
+                                </div>
+                                <span
+                                    class="font-courier text-display text-xs tracking-widest text-text-tertiary"
+                                    >Hermes</span
+                                >
+                            </div>
+                            <div
+                                class="overflow-x-hidden overflow-y-auto whitespace-pre-wrap font-courier p-4 text-[0.75rem] leading-[1.7] normal-case"
+                                style="height: 320px"
+                            >
+                                <span
+                                    class="blink inline-block dither ml-0.5 h-[1em] w-[1ch]"
+                                ></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div
+                    style="background-color: var(--background)"
+                    class="gc relative hidden border-l-0! lg:block"
+                >
+                    <canvas
+                        class="absolute inset-0 h-full w-full transition-opacity duration-500"
+                        style="mix-blend-mode: overlay; opacity: 0"
+                    ></canvas>
+                    <small
+                        style="color: #ffff89"
+                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] absolute right-4 bottom-4 z-1"
+                        >Hermes Agent</small
+                    >
+                </div>
+            </div>
+
+            <div id="features" class="g">
+                <div class="gc order-none! col-span-full">
+                    <hgroup class="flex flex-col gap-2">
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                            ><span class="font-expanded font-bold"
+                                >Features</span
+                            ></small
+                        >
+                    </hgroup>
+                </div>
+                <div class="gc order-none! col-span-full border-b-0! p-0!">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Lives Where You Do</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Telegram, Discord, Slack, WhatsApp, Signal,
+                                    Email, CLI — and a growing list of
+                                    platforms. Start on one, pick up on another.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Grows the Longer It Runs</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Persistent memory and auto-generated skills
+                                    — it learns your projects and never forgets
+                                    how it solved a problem.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Scheduled Automations</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Natural language cron scheduling for
+                                    reports, backups, and briefings — running
+                                    unattended through the gateway.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Delegates &amp; Parallelizes</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Isolated subagents with their own
+                                    conversations, terminals, and Python RPC
+                                    scripts for zero-context-cost pipelines.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Real Sandboxing</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Five backends — local, Docker, SSH,
+                                    Singularity, Modal — with container
+                                    hardening and namespace isolation.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                        <div class="group relative">
+                            <div class="flex flex-col gap-2">
+                                <small
+                                    style="mix-blend-mode: plus-lighter"
+                                    class="font-mondwest text-[.9375rem] tracking-[0.1875rem]"
+                                    >Full Web &amp; Browser Control</small
+                                >
+                                <p
+                                    class="text-[1.0625rem] leading-relaxed tracking-normal normal-case opacity-60"
+                                >
+                                    Web search, browser automation, vision,
+                                    image generation, text-to-speech, and
+                                    multi-model reasoning.
+                                </p>
+                            </div>
+                            <span
+                                class="absolute inset-1 bg-midground pointer-events-none transition-opacity duration-250 group-hover:opacity-5 opacity-0 group-hover:duration-0"
+                            ></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="gc col-span-full">
+                    <button
+                        class="flex cursor-pointer items-center gap-2 border-none bg-transparent font-mondwest text-[0.9375rem] tracking-[0.1875rem] uppercase text-current opacity-70 transition-opacity hover:opacity-100"
+                    >
+                        More Details
+                        <svg
+                            class="size-3 transition-transform duration-300"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2.5"
+                            viewBox="0 0 24 24"
+                        >
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <footer class="g border-b">
+                <div class="gc">
+                    <small
+                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-70"
+                        >Hermes Agent</small
+                    >
+                    <small
+                        style="mix-blend-mode: plus-lighter"
+                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] text-midground lowercase"
+                        >v0.15.2</small
+                    >
+                </div>
+                <div class="gc"></div>
+                <div class="gc hidden md:block"></div>
+                <div class="gc">
+                    <a
+                        class="transition-opacity hover:opacity-70"
+                        href="https://nousresearch.com"
+                        rel="noopener noreferrer"
+                        target="_blank"
+                    >
+                        <small
+                            class="font-mondwest text-[.9375rem] tracking-[0.1875rem] opacity-70"
+                            >Nous Research ↗</small
+                        >
+                    </a>
+                </div>
+                <div class="gc">
+                    <small
+                        style="mix-blend-mode: plus-lighter"
+                        class="font-mondwest text-[.9375rem] tracking-[0.1875rem] text-midground"
+                        >MIT License &middot; 2026</small
+                    >
+                </div>
+            </footer>
+        </main>
+    </body>
+</html>
