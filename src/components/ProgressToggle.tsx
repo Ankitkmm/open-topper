@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, Circle, FileCheck2, PenLine, StickyNote } from "lucide-react";
 import { useUserData } from "@/components/auth/UserDataProvider";
@@ -19,18 +19,22 @@ interface ProgressToggleProps {
 
 export function ProgressToggle({ questionId }: ProgressToggleProps) {
   const { trackActivity, userScope } = useUserData();
-  const progressMap = useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener(PROGRESS_EVENT, onChange);
-      window.addEventListener("storage", onChange);
-      return () => {
-        window.removeEventListener(PROGRESS_EVENT, onChange);
-        window.removeEventListener("storage", onChange);
-      };
-    },
-    () => readProgressMapForScope(userScope),
-    () => ({} as ProgressMap),
-  );
+  const [progressMap, setProgressMap] = useState<ProgressMap>({});
+
+  useEffect(() => {
+    const update = () => {
+      setProgressMap(readProgressMapForScope(userScope));
+    };
+
+    update();
+    window.addEventListener(PROGRESS_EVENT, update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener(PROGRESS_EVENT, update);
+      window.removeEventListener("storage", update);
+    };
+  }, [userScope]);
+
   const progress = useMemo(() => progressMap[questionId] || EMPTY_PROGRESS, [progressMap, questionId]);
 
   function toggle(key: ProgressKey) {

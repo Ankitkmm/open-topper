@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ActivityMap } from "@/lib/local-user-store";
 import {
   ACTIVITY_EVENT,
@@ -34,6 +34,7 @@ export function UserDataProvider({
   const userName = null;
   const userScope = normalizeScope("anon");
   const status = "unauthenticated" as const;
+  const [activityMap, setActivityMap] = useState<ActivityMap>({});
 
   useEffect(() => {
     if (userScope !== "anon") {
@@ -41,18 +42,19 @@ export function UserDataProvider({
     }
   }, [userScope]);
 
-  const activityMap = useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener(ACTIVITY_EVENT, onChange);
-      window.addEventListener("storage", onChange);
-      return () => {
-        window.removeEventListener(ACTIVITY_EVENT, onChange);
-        window.removeEventListener("storage", onChange);
-      };
-    },
-    () => readActivityMapForScope(userScope),
-    () => ({} as ActivityMap),
-  );
+  useEffect(() => {
+    const update = () => {
+      setActivityMap(readActivityMapForScope(userScope));
+    };
+
+    update();
+    window.addEventListener(ACTIVITY_EVENT, update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener(ACTIVITY_EVENT, update);
+      window.removeEventListener("storage", update);
+    };
+  }, [userScope]);
 
   const value = useMemo<UserDataContextValue>(
     () => ({
