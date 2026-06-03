@@ -1,6 +1,7 @@
 import { IBM_Plex_Mono, Sora } from "next/font/google";
 import type { Metadata } from "next";
 import "./globals.css";
+import { AppShell } from "@/components/AppShell";
 import { SITE_NAME } from "@/lib/marketing";
 
 export const metadata: Metadata = {
@@ -46,7 +47,9 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${sora.variable} ${ibmPlexMono.variable}`}
     >
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <AppShell authAvailable={authAvailable}>{children}</AppShell>
+      </body>
     </html>
   );
 }
