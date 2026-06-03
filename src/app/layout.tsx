@@ -34,9 +34,7 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "700"],
 });
 
-const authAvailable = Boolean(
-  process.env.AUTH_SECRET && process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET,
-);
+const authAvailable = false;
 
 export default function RootLayout({
   children,

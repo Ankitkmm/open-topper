@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import { useSession } from "next-auth/react";
 import type { ActivityMap } from "@/lib/local-user-store";
 import {
   ACTIVITY_EVENT,
@@ -31,10 +30,10 @@ export function UserDataProvider({
   authAvailable: boolean;
   children: React.ReactNode;
 }) {
-  const { data: session, status } = useSession();
-  const userEmail = session?.user?.email?.trim().toLowerCase() || null;
-  const userName = session?.user?.name?.trim() || null;
-  const userScope = normalizeScope(userEmail || "anon");
+  const userEmail = null;
+  const userName = null;
+  const userScope = normalizeScope("anon");
+  const status = "unauthenticated" as const;
 
   useEffect(() => {
     if (userScope !== "anon") {
@@ -58,8 +57,8 @@ export function UserDataProvider({
   const value = useMemo<UserDataContextValue>(
     () => ({
       activityMap,
-      authAvailable,
-      isAuthenticated: Boolean(userEmail),
+      authAvailable: false,
+      isAuthenticated: false,
       status,
       trackActivity(amount = 1) {
         trackActivityForScope(userScope, amount);
