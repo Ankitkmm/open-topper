@@ -32,7 +32,8 @@ export function MarketingFooter() {
         <div className="space-y-4">
           <BrandLockup compact />
           <p className="max-w-2xl text-sm leading-7 text-secondary">
-            UPSCat helps aspirants keep track of preparation, search PYQs faster, and revisit the right topics at the right time.
+            UPSCat helps aspirants search PYQs faster, study topper approaches with context, and
+            track preparation without the usual clutter.
           </p>
           <div className="flex flex-wrap items-center gap-3 text-sm text-secondary">
             <span className="study-badge study-badge-accent">{SITE_DOMAIN}</span>

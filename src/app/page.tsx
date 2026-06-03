@@ -20,7 +20,7 @@ import { getOfficialPyqStats } from "@/lib/official-pyqs";
 export const metadata: Metadata = {
   title: `${SITE_NAME} | Track prep, search PYQs, revise smarter`,
   description:
-    "UPSCat helps aspirants track preparation, search PYQs faster, and jump from a question to useful answer guidance.",
+    "UPSCat helps aspirants search PYQs, study topper approaches, and track preparation with more clarity.",
 };
 
 function loadStats() {
@@ -44,36 +44,36 @@ const ENTRY_POINTS = [
 const PRODUCT_COLUMNS = [
   {
     icon: Target,
-    title: "See what needs revision",
+    title: "Know what needs revision",
     description:
-      "Track your recent prep activity, spot weak days quickly, and know what is slipping before the exam does it for you.",
+      "See what you studied, what got ignored, and what is slipping before revision season becomes panic season.",
   },
   {
     icon: Search,
-    title: "Search by issue",
+    title: "Search by topic",
     description:
-      "Look up a topic like federalism, inflation, ethics, or disaster management and jump straight into the relevant PYQs.",
+      "Look up a topic like federalism, inflation, ethics, or disaster management and jump straight to the relevant PYQs.",
   },
   {
     icon: BrainCircuit,
-    title: "Stay in context",
+    title: "Study with context",
     description:
-      "Move from the original question to answer guidance and supporting references without losing your place or your focus.",
+      "Move from the original question to topper approaches, answer signals, and related themes without losing context.",
   },
 ];
 
 const FREE_FEATURES = [
-  "Browse GS and Essay workspaces",
-  "Search PYQs and linked answer signals",
-  "Track progress and study activity in your browser",
-  "Move from question to source page quickly",
+  "Browse GS, Essay, and optional PYQ workspaces",
+  "Search PYQs, themes, and linked answer signals",
+  "Track study progress locally in your browser",
+  "Move from a question to the right source trail quickly",
 ];
 
 const PLUS_FEATURES = [
-  "Google sign-in for a named study profile",
-  "Richer revision insights and progress summaries",
-  "Priority access to new personalization features",
-  "Launch pricing reserved at ₹499/month",
+  "Personalised agentic tracking of progress",
+  "Smarter revision nudges based on your study trail",
+  "Deeper topic-to-topic recall support",
+  "Early access to future mentor and agent workflows",
 ];
 
 export default function LandingPage() {
@@ -106,9 +106,9 @@ export default function LandingPage() {
               Your UPSC prep, finally in one place.
             </h1>
             <p className="mt-6 max-w-3xl text-base leading-8 text-secondary sm:text-lg">
-              {SITE_NAME} is built for aspirants who want to keep track of preparation, search
-              PYQs fast, and revisit the right topics at the right time instead of juggling
-              scattered notes, tabs, and PDFs.
+              {SITE_NAME} is built for aspirants who want PYQs, topper thinking, and progress
+              tracking in one workflow instead of juggling scattered PDFs, notes, Telegram links,
+              and half-remembered bookmarks.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -167,7 +167,7 @@ export default function LandingPage() {
                 <div>
                   <div className="overline">Your recent study pattern</div>
                   <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-                    A GitHub-style heatmap for actual prep activity
+                    Tracks your progress in real time with AI agents
                   </h2>
                 </div>
                 <div className="relative hidden h-24 w-24 shrink-0 rounded-[28px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_86%,transparent)] text-[var(--accent-strong)] sm:grid sm:place-items-center">
@@ -189,17 +189,17 @@ export default function LandingPage() {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <PreviewCard
                   title="Opens questions"
-                  detail="Question views, progress updates, topic clicks, and source opens all count as activity."
+                  detail="Question views, topic clicks, revision actions, and source opens all count as study activity."
                   icon={BookOpen}
                 />
                 <PreviewCard
-                  title="Stays local"
-                  detail="Your progress stays in this browser unless you choose to sign in."
+                  title="Feels personal"
+                  detail="The system keeps noticing what you touch, what you skip, and what needs to come back into revision."
                   icon={Compass}
                 />
                 <PreviewCard
-                  title="Feels familiar"
-                  detail="A simple daily heatmap makes consistency visible without overcomplicating the signal."
+                  title="Stays usable"
+                  detail="A simple progress layer keeps the signal clear instead of drowning you in dashboards for the sake of it."
                   icon={CheckCircle2}
                 />
               </div>
@@ -212,11 +212,11 @@ export default function LandingPage() {
             <div className="max-w-3xl">
               <div className="overline">What UPSCat helps you do</div>
               <h2 className="mt-4 text-4xl font-semibold leading-tight tracking-[-0.04em] sm:text-6xl">
-                Study with fewer tabs and better recall.
+                Study with less chaos and better recall.
               </h2>
               <p className="mt-5 text-base leading-8 text-secondary sm:text-lg">
-                This is for aspirants who want to know what to revise next, not just what to save
-                next.
+                This is for aspirants who want to know what to revise next, what topper material is
+                worth opening, and how their prep is actually moving week to week.
               </p>
             </div>
 
@@ -244,9 +244,9 @@ export default function LandingPage() {
                 Start free. Upgrade when the extra depth matters.
               </h2>
               <p className="mt-5 text-base leading-8 text-secondary sm:text-lg">
-                The free workspace is usable right away. Plus is opening at ₹499/month for
-                aspirants who want a named study profile and deeper guidance as those features roll
-                out.
+                The free workspace is usable right away. Plus is for aspirants who want more
+                personalised agentic tracking, deeper revision support, and sharper guidance as the
+                product grows.
               </p>
             </div>
 
@@ -263,7 +263,7 @@ export default function LandingPage() {
               <PriceCard
                 title="Plus"
                 price="₹499/mo"
-                subtitle="Launch pricing for deeper personalization"
+                subtitle="For more personalised agentic prep support"
                 features={PLUS_FEATURES}
                 ctaLabel="Join the Plus waitlist"
                 ctaHref={WAITLIST_LINK}

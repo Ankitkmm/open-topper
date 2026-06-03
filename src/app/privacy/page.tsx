@@ -23,16 +23,18 @@ export default function PrivacyPage() {
         </section>
 
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
-          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Google sign-in</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Future account features</h2>
           <p className="mt-4">
-            If Google sign-in is enabled and you choose to use it, the app receives basic account identity information needed to show you as signed in.
+            If account features are enabled later, the app may receive basic identity information
+            needed to separate your workspace and progress cleanly.
           </p>
         </section>
 
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
           <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Local progress</h2>
           <p className="mt-4">
-            Progress tracking and study activity are currently stored in your browser on your device. Signing in helps the app separate your local progress by account on that device, but this version does not use a database-backed user progress store.
+            Progress tracking and study activity are currently stored in your browser on your
+            device. This version does not yet use a database-backed progress store.
           </p>
         </section>
 

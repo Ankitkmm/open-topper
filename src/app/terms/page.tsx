@@ -25,7 +25,8 @@ export default function TermsPage() {
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
           <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Accounts and pricing</h2>
           <p className="mt-4">
-            Google sign-in may be offered as an optional way to identify yourself in the app. Paid plans may be offered later, and any billing-specific terms will be shown clearly at the point of purchase.
+            Account features may be introduced later. Paid plans may also be offered later, and
+            any billing-specific terms will be shown clearly at the point of purchase.
           </p>
         </section>
 
