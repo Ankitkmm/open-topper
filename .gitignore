@@ -58,8 +58,5 @@ next-env.d.ts
 
 # generated app data
 data/app/
-data/relational/
-
-# generated app data
-data/app/
+!data/app/public-official-pyq-links.json
 data/relational/

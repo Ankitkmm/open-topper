@@ -167,7 +167,7 @@ export default function LandingPage() {
                 <div>
                   <div className="overline">Your recent study pattern</div>
                   <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">
-                    Tracks your progress in real time with AI agents
+                    Track your prep and revision rhythm
                   </h2>
                 </div>
                 <div className="relative hidden h-24 w-24 shrink-0 rounded-[28px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_86%,transparent)] text-[var(--accent-strong)] sm:grid sm:place-items-center">
@@ -188,18 +188,18 @@ export default function LandingPage() {
 
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <PreviewCard
-                  title="Opens questions"
-                  detail="Question views, topic clicks, revision actions, and source opens all count as study activity."
+                  title="Counts study actions"
+                  detail="Question views, topic clicks, revision actions, and source opens all show up as activity."
                   icon={BookOpen}
                 />
                 <PreviewCard
-                  title="Feels personal"
-                  detail="The system keeps noticing what you touch, what you skip, and what needs to come back into revision."
+                  title="Shows gaps early"
+                  detail="It becomes easier to spot which days had momentum and which topics are slipping out of revision."
                   icon={Compass}
                 />
                 <PreviewCard
-                  title="Stays usable"
-                  detail="A simple progress layer keeps the signal clear instead of drowning you in dashboards for the sake of it."
+                  title="Keeps it simple"
+                  detail="A lightweight progress layer keeps the signal useful instead of turning prep into another dashboard."
                   icon={CheckCircle2}
                 />
               </div>
