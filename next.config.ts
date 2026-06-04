@@ -67,6 +67,13 @@ const nextConfig: NextConfig = {
         headers: apiSecurityHeaders,
       },
       {
+        source: "/api/search",
+        headers: [
+          ...apiSecurityHeaders,
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet, noimageindex" },
+        ],
+      },
+      {
         source: "/api/answer-source/:answerId",
         headers: pdfProxyHeaders,
       },

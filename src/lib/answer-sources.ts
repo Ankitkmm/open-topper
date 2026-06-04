@@ -7,10 +7,13 @@ export interface AnswerSourceRecord {
   url: string;
   page: number;
   questionId: string;
-  topperName: string;
+  topperName: string | null;
   rank: number | null;
   year: number | null;
   linkSource: string | null;
+  pageStatus?: "valid" | "missing" | "fallback" | "out_of_range";
+  pageSource?: string;
+  sourceStatus?: string;
   filename?: string;
   sourceFilename?: string | null;
 }
@@ -33,7 +36,7 @@ export function isValidAnswerId(answerId: string) {
 
 export function getResolvedAnswerSource(answerId: string) {
   const record = loadAnswerSources().sources[answerId];
-  const sourceUrl = resolveR2Url(record?.url || "");
+  const sourceUrl = resolvePublishedUrl(record?.url || "");
   if (!record || !sourceUrl) return null;
 
   return {
@@ -65,7 +68,7 @@ export function toProxiedPdfUrl(answerId: string, page: number) {
 }
 
 export function contentDispositionFilename(record: AnswerSourceRecord) {
-  const preferred = record.filename || `${record.topperName || "Anonymous topper"} ${record.questionId}.pdf`;
+  const preferred = record.filename || `${record.topperName || "Name unavailable"} ${record.questionId}.pdf`;
   const clean = preferred
     .replace(/[^\w .()-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -95,10 +98,11 @@ function loadR2Map() {
   return cachedR2Map;
 }
 
-function resolveR2Url(rawUrl: string) {
+function resolvePublishedUrl(rawUrl: string) {
   const url = String(rawUrl || "").trim();
   if (!url) return null;
   if (isR2Url(url)) return url;
+  if (isDirectPdfUrl(url)) return url;
 
   const driveId = url.match(/drive\.google\.com\/file\/d\/([^/?#]+)/)?.[1]
     || url.match(/\/drive_([^/?#]+?)\.pdf(?:[?#]|$)/)?.[1];
@@ -110,4 +114,13 @@ function resolveR2Url(rawUrl: string) {
 
 function isR2Url(url: string) {
   return url.includes(".r2.dev") || url.includes(".r2.cloudflarestorage.com");
+}
+
+function isDirectPdfUrl(url: string) {
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    return /\.pdf$/i.test(new URL(url).pathname);
+  } catch {
+    return /\.pdf(?:[?#]|$)/i.test(url);
+  }
 }

@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import type { SubjectPyqCard } from "./pyq";
+import type { SubjectPyqCard } from "./search-results";
 
 interface OfficialRow {
   id: string;

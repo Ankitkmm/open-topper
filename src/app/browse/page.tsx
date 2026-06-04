@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { QuestionCards } from "@/components/QuestionCards";
-import { getOfficialBrowsePyqs } from "@/lib/official-pyqs";
+import { getBrowsePyqs } from "@/lib/pyq";
 
 export const metadata: Metadata = {
   title: "Browse All Questions - UPSCat",
   description:
-    "Browse all UPSC PYQs with linked answer signals. Search by question, topic, or keyword.",
+    "Browse all UPSC PYQs with hybrid search and subject-first navigation.",
 };
 
 export default async function BrowsePage({
@@ -14,26 +14,24 @@ export default async function BrowsePage({
   searchParams: Promise<{
     q?: string;
     category?: string;
-    keyword?: string;
-    page?: string;
   }>;
 }) {
   const params = await searchParams;
   const search = params.q || "";
   const category = params.category || null;
-  const keyword = params.keyword || null;
-
-  const filtered = getOfficialBrowsePyqs(search, category || "", keyword || "", 10000);
-  const initial = filtered.slice(0, 240);
+  const questions = await getBrowsePyqs({
+    query: search,
+    category: category || "",
+    limit: 240,
+  });
 
   return (
     <QuestionCards
-      initialQuestions={initial}
-      totalFiltered={filtered.length}
+      initialQuestions={questions}
+      totalFiltered={questions.length}
       searchParams={{
         q: search,
         category: category || "",
-        keyword: keyword || "",
       }}
     />
   );

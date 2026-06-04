@@ -1,86 +1,94 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { startTransition, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  BookOpen,
-  ChevronDown,
-  FileText,
-  Library,
-  Loader2,
-  Search,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, FileText, Loader2, Search, Sparkles } from "lucide-react";
 import { AuthControls } from "@/components/auth/AuthControls";
 import { useUserData } from "@/components/auth/UserDataProvider";
+import { ThemeSwitcher } from "./ThemeProvider";
 import { ProgressToggle } from "./ProgressToggle";
 import { SubjectProgress } from "./SubjectProgress";
-import { ThemeSwitcher } from "./ThemeProvider";
-import type { SubjectPyqCard } from "@/lib/pyq";
+import { PdfViewer } from "./PdfViewer";
+import { getSubjectDefinitions, type SubjectKey } from "@/lib/subject-definitions";
+import type { WorkspaceQuestion, WorkspaceSyllabusNode } from "@/lib/question-bank";
+import { displayPublicTopperName } from "@/lib/public-records";
 
 interface SubjectWorkspaceProps {
-  subjectKey: string;
+  subjectKey: SubjectKey;
   title: string;
   description: string;
-  cards: SubjectPyqCard[];
+  questions: WorkspaceQuestion[];
+  syllabusNodes: WorkspaceSyllabusNode[];
   query?: string;
+  selectedSyllabusId?: string;
+  baseHref: string;
 }
 
-interface PdfState {
-  url: string;
-  page: number;
+interface ViewerState {
+  src: string;
   title: string;
+  page: number;
+  pageStatus?: "valid" | "missing" | "fallback" | "out_of_range" | null;
 }
 
-type WorkspaceTab = "pyqs" | "topper" | "search";
-
-const PAGE_SIZE = 18;
-const SUBJECT_TABS = [
-  { key: "gs1", label: "GS I", href: "/gs1" },
-  { key: "gs2", label: "GS II", href: "/gs2" },
-  { key: "gs3", label: "GS III", href: "/gs3" },
-  { key: "gs4", label: "GS IV", href: "/gs4" },
-  { key: "essay", label: "Essay", href: "/essay" },
-];
-
-export function SubjectWorkspace({ subjectKey, title, description, cards, query = "" }: SubjectWorkspaceProps) {
+export function SubjectWorkspace({
+  subjectKey,
+  title,
+  description,
+  questions,
+  syllabusNodes,
+  query = "",
+  selectedSyllabusId = "",
+  baseHref,
+}: SubjectWorkspaceProps) {
+  const router = useRouter();
   const { trackActivity } = useUserData();
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(query ? "search" : "pyqs");
-  const [workspaceQuery, setWorkspaceQuery] = useState(query);
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [revealedQuestions, setRevealedQuestions] = useState<Set<string>>(new Set());
-  const [openRelevantQuestions, setOpenRelevantQuestions] = useState<Set<string>>(new Set());
+  const [openQuestions, setOpenQuestions] = useState<Set<string>>(new Set());
   const [openSummaries, setOpenSummaries] = useState<Set<string>>(new Set());
-  const [pdf, setPdf] = useState<PdfState | null>(null);
   const [loadingAnswer, setLoadingAnswer] = useState<string | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<ViewerState | null>(null);
 
-  const topicIndex = useMemo(() => buildTopicIndex(cards.filter((card) => matchesWorkspaceFilters(card, workspaceQuery, null))), [cards, workspaceQuery]);
-  const filteredCards = useMemo(
-    () => cards.filter((card) => matchesWorkspaceFilters(card, workspaceQuery, selectedTopic)),
-    [cards, selectedTopic, workspaceQuery],
+  const groupNodes = useMemo(
+    () => syllabusNodes.filter((node) => node.kind === "group"),
+    [syllabusNodes],
   );
-  const visibleCards = filteredCards.slice(0, visibleCount);
-  const yearGroups = useMemo(() => groupCardsByYear(visibleCards), [visibleCards]);
-  const topperQuestions = useMemo(() => flattenRelevantQuestions(filteredCards).slice(0, visibleCount * 2), [filteredCards, visibleCount]);
-  const relevantCount = useMemo(() => filteredCards.reduce((sum, card) => sum + card.relevantQuestionCount, 0), [filteredCards]);
-  const linkedCount = useMemo(() => filteredCards.reduce((sum, card) => sum + card.topperCount, 0), [filteredCards]);
+  const topicNodes = useMemo(
+    () => syllabusNodes.filter((node) => node.kind === "topic"),
+    [syllabusNodes],
+  );
+  const topicCounts = useMemo(
+    () => questions.reduce((sum, question) => sum + question.linkedInsights.length, 0),
+    [questions],
+  );
 
-  function toggleSet(setter: (next: Set<string>) => void, current: Set<string>, id: string) {
+  function toggleSet(current: Set<string>, id: string) {
     const next = new Set(current);
     if (next.has(id)) next.delete(id);
     else next.add(id);
-    setter(next);
+    return next;
   }
 
-  function chooseTopic(topic: string | null) {
-    setSelectedTopic(topic);
-    setVisibleCount(PAGE_SIZE);
-    if (topic) trackActivity();
+  function buildHref(nextQuery: string, nextSyllabusId: string) {
+    const params = new URLSearchParams();
+    if (nextQuery.trim()) params.set("q", nextQuery.trim());
+    if (nextSyllabusId) params.set("syllabus", nextSyllabusId);
+    const suffix = params.toString();
+    return suffix ? `${baseHref}?${suffix}` : baseHref;
+  }
+
+  function navigateTo(nextQuery: string, nextSyllabusId: string) {
+    const href = buildHref(nextQuery, nextSyllabusId);
+    startTransition(() => router.push(href));
+  }
+
+  function handleBack() {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/");
   }
 
   async function openPdf(answerId: string, titleText: string) {
@@ -93,8 +101,15 @@ export function SubjectWorkspace({ subjectKey, title, description, cards, query 
         body: JSON.stringify({ answerId }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "PDF could not be opened.");
-      setPdf({ url: payload.embedUrl, page: payload.page, title: titleText });
+      if (!response.ok || !payload?.embedUrl) {
+        throw new Error(payload?.error || "PDF could not be opened.");
+      }
+      setViewer({
+        src: payload.embedUrl,
+        title: titleText,
+        page: payload.page || 1,
+        pageStatus: payload.pageStatus || null,
+      });
       trackActivity(2);
     } catch (error) {
       setViewerError(error instanceof Error ? error.message : "PDF could not be opened.");
@@ -107,514 +122,292 @@ export function SubjectWorkspace({ subjectKey, title, description, cards, query 
     <main className="library-page min-h-screen">
       <section className="mx-auto max-w-7xl px-5 py-5 sm:px-8 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b border-terminal pb-5">
-          <Link href="/" className="quiet-link inline-flex items-center gap-2 text-sm font-semibold">
+          <button type="button" className="quiet-link inline-flex items-center gap-2 text-sm font-semibold" onClick={handleBack}>
             <ArrowLeft size={16} aria-hidden="true" />
-            Subjects
-          </Link>
+            Back
+          </button>
           <nav className="flex flex-wrap items-center gap-2" aria-label="Subjects">
-            {SUBJECT_TABS.map((item) => (
-              <Link key={item.key} href={item.href} className={item.key === subjectKey ? "btn-primary" : "btn-secondary"}>
-                {item.label}
+            {getSubjectDefinitions().map((item) => (
+              <Link
+                key={item.key}
+                href={item.href}
+                className={item.key === subjectKey ? "btn-primary" : "btn-secondary"}
+              >
+                {item.shortLabel}
               </Link>
             ))}
-            <ThemeSwitcher compact />
-            <AuthControls compact />
             <Link href="/browse" className="btn-secondary">
               <Search size={15} aria-hidden="true" />
               Search all
             </Link>
+            <ThemeSwitcher compact />
+            <AuthControls compact />
           </nav>
         </header>
 
         <section className="grid gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
           <div>
-            <div className="overline mb-3">Subject workspace / {subjectKey.replace("-", " ")}</div>
+            <div className="overline mb-3">Subject workspace</div>
             <h1 className="text-4xl font-semibold leading-tight sm:text-6xl">{title}</h1>
-            <p className="mt-4 max-w-2xl text-base leading-8 text-secondary">{description}</p>
+            <p className="mt-4 max-w-3xl text-base leading-8 text-secondary">{description}</p>
           </div>
-          <SubjectProgress questionIds={cards.map((card) => card.id)} />
+          <SubjectProgress questionIds={questions.map((question) => question.id)} />
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="PYQs" value={filteredCards.length.toLocaleString()} />
-          <Metric label="Relevant questions" value={relevantCount.toLocaleString()} />
-          <Metric label="Answer signals" value={linkedCount.toLocaleString()} />
-          <Metric label="Progress" value="Local" />
+          <Metric label="Visible PYQs" value={questions.length.toLocaleString()} />
+          <Metric label="Topper copies" value={topicCounts.toLocaleString()} />
+          <Metric label="Selected node" value={selectedSyllabusId ? "1" : "All"} />
+          <Metric label="Mode" value="Syllabus first" />
         </section>
 
-        <section className="mt-6 grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="soft-panel h-fit p-3 lg:sticky lg:top-4">
-            <div className="overline px-2 pb-2">Syllabus topics</div>
+        <section className="mt-6 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="soft-panel h-fit p-4 lg:sticky lg:top-4">
+            <div className="overline mb-3">Syllabus</div>
             <button
               type="button"
-              className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${selectedTopic ? "text-secondary hover:bg-[var(--accent-soft)]" : "bg-[var(--accent-soft)] text-accent"}`}
-              onClick={() => chooseTopic(null)}
+              className={selectedSyllabusId ? "quiet-link text-sm" : "btn-primary w-full justify-start"}
+              onClick={() => navigateTo(query, "")}
             >
-              <span>All topics</span>
-              <span className="mono-stat text-xs">{cards.filter((card) => matchesWorkspaceFilters(card, workspaceQuery, null)).length}</span>
+              All syllabus nodes
             </button>
-            <div className="mt-2 grid max-h-[58vh] gap-1 overflow-auto pr-1">
-              {topicIndex.slice(0, 80).map((topic) => (
-                <button
-                  key={topic.name}
-                  type="button"
-                  className={`rounded-md px-3 py-2 text-left text-sm leading-5 ${selectedTopic === topic.name ? "bg-[var(--accent-soft)] text-accent" : "text-secondary hover:bg-[var(--accent-soft)]"}`}
-                  onClick={() => chooseTopic(topic.name)}
-                >
-                  <span className="block font-semibold">{topic.name}</span>
-                  <span className="mt-1 block text-xs text-muted">{topic.pyqs} PYQs · {topic.copies} signals</span>
-                </button>
-              ))}
+
+            <div className="mt-4 grid gap-4">
+              {groupNodes.map((group) => {
+                const children = topicNodes.filter((node) => node.parentId === group.id);
+                if (!children.length) return null;
+
+                return (
+                  <section key={group.id} className="grid gap-1">
+                    <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+                      {group.label}
+                    </div>
+                    {children.map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        className={
+                          selectedSyllabusId === node.id
+                            ? "soft-button w-full justify-between text-left"
+                            : "flex w-full items-start justify-between rounded-2xl border border-terminal px-3 py-2 text-left text-sm text-secondary transition hover:border-[var(--accent)] hover:text-primary"
+                        }
+                        data-variant={selectedSyllabusId === node.id ? "primary" : "secondary"}
+                        onClick={() => navigateTo(query, node.id)}
+                      >
+                        <span className="pr-3 leading-6">{node.label}</span>
+                        <span className="mono-stat text-xs text-muted">{node.questionCount}</span>
+                      </button>
+                    ))}
+                  </section>
+                );
+              })}
             </div>
           </aside>
 
-          <div className="min-w-0">
-            <div className="soft-panel p-3 sm:p-4">
-              <div className="flex flex-wrap gap-2">
-                <TabButton active={activeTab === "pyqs"} onClick={() => setActiveTab("pyqs")}>PYQs</TabButton>
-                <TabButton active={activeTab === "topper"} onClick={() => setActiveTab("topper")}>Answer Paths</TabButton>
-                <TabButton active={activeTab === "search"} onClick={() => setActiveTab("search")}>Search</TabButton>
-              </div>
-              <div className="relative mt-4">
-                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
-                <input
-                  value={workspaceQuery}
-                  onChange={(event) => {
-                    setWorkspaceQuery(event.target.value);
-                    setVisibleCount(PAGE_SIZE);
-                    if (activeTab !== "search" && event.target.value.trim()) setActiveTab("search");
-                  }}
-                  placeholder="Search official PYQs, matched questions, names, institutes, marks, topics..."
-                  className="soft-input h-12 w-full pl-11 pr-4 text-sm"
-                />
-              </div>
-              {(selectedTopic || workspaceQuery.trim()) && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-secondary">
-                  {workspaceQuery.trim() && <span className="study-badge">Search: {workspaceQuery.trim()}</span>}
-                  {selectedTopic && <span className="study-badge study-badge-accent">{selectedTopic}</span>}
-                  {selectedTopic && <button type="button" className="quiet-link text-xs font-semibold" onClick={() => chooseTopic(null)}>Clear topic</button>}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+            <div className="min-w-0">
+              <form
+                className="soft-panel p-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = new FormData(event.currentTarget);
+                  navigateTo(String(form.get("q") || ""), selectedSyllabusId);
+                }}
+              >
+                <div className="relative">
+                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
+                  <input
+                    name="q"
+                    defaultValue={query}
+                    placeholder={`Search inside ${title}`}
+                    className="soft-input h-12 w-full pl-11 pr-4 text-sm"
+                  />
+                </div>
+                {(selectedSyllabusId || query.trim()) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-secondary">
+                    {query.trim() && <span className="study-badge">Search: {query.trim()}</span>}
+                    {selectedSyllabusId && (
+                      <span className="study-badge study-badge-accent">
+                        {topicNodes.find((node) => node.id === selectedSyllabusId)?.label || "Selected syllabus"}
+                      </span>
+                    )}
+                    <button type="button" className="quiet-link text-xs font-semibold" onClick={() => navigateTo("", "")}>
+                      Clear filters
+                    </button>
+                  </div>
+                )}
+              </form>
+
+              {viewerError && (
+                <div className="mt-4 soft-panel-muted p-4 text-sm text-secondary">
+                  {viewerError}
+                </div>
+              )}
+
+              <section className="mt-6 grid gap-5">
+                {questions.map((question, index) => {
+                  const isOpen = openQuestions.has(question.id);
+                  return (
+                    <article key={question.id} className="pyq-card overflow-hidden">
+                      <div className="grid gap-4 p-4 sm:grid-cols-[48px_minmax(0,1fr)_auto] sm:p-5">
+                        <div className="mono-stat hidden h-11 w-11 place-items-center rounded-full bg-[var(--accent-soft)] text-xs text-accent sm:grid">
+                          {String(index + 1).padStart(2, "0")}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <span className="study-badge">{question.paper}</span>
+                            {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
+                            {question.marks && <span className="study-badge">{question.marks} marks</span>}
+                            <span className="study-badge study-badge-accent">
+                              {question.linkedInsights.length} {question.linkedInsights.length === 1 ? "copy" : "copies"}
+                            </span>
+                          </div>
+                          <h2 className="question-title text-lg font-semibold leading-8 sm:text-xl">
+                            {question.question}
+                          </h2>
+                          {question.syllabusPath[1] && (
+                            <p className="mt-3 text-sm leading-7 text-secondary">{question.syllabusPath[1]}</p>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col items-start gap-2 sm:items-end">
+                          <ProgressToggle questionId={question.id} />
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={() => {
+                              setOpenQuestions((current) => toggleSet(current, question.id));
+                              trackActivity();
+                            }}
+                          >
+                            {isOpen ? "Hide copies" : "Topper copies"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isOpen && (
+                        <div className="animate-fade-in border-t border-terminal p-4 sm:p-5">
+                          <div className="grid gap-3">
+                            {question.linkedInsights.length > 0 ? (
+                              question.linkedInsights.map((copy) => {
+                                const summaryOpen = openSummaries.has(copy.answerId);
+                                const topperLabel = displayPublicTopperName(copy.topperName);
+                                return (
+                                  <article key={copy.answerId} className="soft-panel p-4">
+                                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="font-semibold">{topperLabel}</span>
+                                          {copy.rank && <span className="study-badge">AIR {copy.rank}</span>}
+                                          {copy.year && <span className="study-badge">{copy.year}</span>}
+                                          {copy.institute && <span className="study-badge">{copy.institute}</span>}
+                                          {copy.marks && <span className="study-badge">{copy.marks}</span>}
+                                          {copy.pageHint && <span className="study-badge">Page {copy.pageHint}</span>}
+                                        </div>
+                                        <p className="mt-2 text-xs leading-6 text-muted">{question.question}</p>
+                                        {!copy.sourceAvailable && (
+                                          <p className="mt-2 text-xs text-muted">
+                                            {copy.sourceStatus === "not_uploaded"
+                                              ? "PDF not uploaded yet."
+                                              : copy.sourceStatus === "page_out_of_range"
+                                                ? "PDF page mapping needs correction."
+                                                : "PDF page not available yet."}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2 lg:justify-end">
+                                        {copy.summaryAvailable && (
+                                          <button
+                                            type="button"
+                                            className="btn-secondary"
+                                            onClick={() => {
+                                              setOpenSummaries((current) => toggleSet(current, copy.answerId));
+                                              trackActivity();
+                                            }}
+                                          >
+                                            <Sparkles size={15} aria-hidden="true" />
+                                            {summaryOpen ? "Hide summary" : "Show summary"}
+                                          </button>
+                                        )}
+                                        {copy.sourceAvailable ? (
+                                          <button
+                                            type="button"
+                                            className="btn-primary"
+                                            onClick={() => void openPdf(copy.answerId, `${topperLabel} · ${question.question}`)}
+                                            disabled={loadingAnswer === copy.answerId}
+                                          >
+                                            {loadingAnswer === copy.answerId ? (
+                                              <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                                            ) : (
+                                              <FileText size={15} aria-hidden="true" />
+                                            )}
+                                            View PDF
+                                          </button>
+                                        ) : (
+                                          <span className="study-badge">PDF unavailable</span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {summaryOpen && copy.summaryAvailable && (
+                                      <div className="summary-box mt-4 p-4 text-sm leading-7 text-secondary">
+                                        {copy.summary}
+                                      </div>
+                                    )}
+                                  </article>
+                                );
+                              })
+                            ) : (
+                              <div className="soft-panel-muted p-4 text-sm leading-7 text-secondary">
+                                No topper copies are attached to this PYQ yet.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
+              </section>
+
+              {questions.length === 0 && (
+                <div className="py-20 text-center text-secondary">
+                  No PYQs matched this syllabus node and search query.
                 </div>
               )}
             </div>
 
-            {viewerError && (
-              <div className="mt-4 soft-panel-muted p-4 text-sm text-secondary">
-                {viewerError}
-              </div>
-            )}
-
-            {activeTab === "topper" ? (
-              <TopperQuestionTab
-                questions={topperQuestions}
-                openRelevantQuestions={openRelevantQuestions}
-                openSummaries={openSummaries}
-                loadingAnswer={loadingAnswer}
-                onToggleCopies={(id) => {
-                  toggleSet(setOpenRelevantQuestions, openRelevantQuestions, id);
-                  trackActivity();
-                }}
-                onToggleSummary={(answerId) => {
-                  toggleSet(setOpenSummaries, openSummaries, answerId);
-                  trackActivity();
-                }}
-                onOpenPdf={openPdf}
-              />
-            ) : (
-              <section className="mt-7 grid gap-5">
-                {yearGroups.map((group) => (
-                  <div key={group.label} className="grid gap-4">
-                    <div className="overline sticky top-0 z-10 w-fit rounded-full border border-terminal bg-[var(--bg-surface)] px-3 py-1">
-                      {group.label}
-                    </div>
-                    {group.cards.map((card, index) => {
-                      const questionsOpen = revealedQuestions.has(card.id);
-                      const hasRelevantQuestions = card.relevantQuestions.length > 0;
-                      return (
-                        <PyqCard
-                          key={card.id}
-                          card={card}
-                          index={index}
-                          questionsOpen={questionsOpen}
-                          hasRelevantQuestions={hasRelevantQuestions}
-                          openRelevantQuestions={openRelevantQuestions}
-                          openSummaries={openSummaries}
-                          loadingAnswer={loadingAnswer}
-                          onToggleQuestions={() => {
-                            toggleSet(setRevealedQuestions, revealedQuestions, card.id);
-                            trackActivity();
-                          }}
-                          onToggleCopies={(id) => {
-                            toggleSet(setOpenRelevantQuestions, openRelevantQuestions, id);
-                            trackActivity();
-                          }}
-                          onToggleSummary={(answerId) => {
-                            toggleSet(setOpenSummaries, openSummaries, answerId);
-                            trackActivity();
-                          }}
-                          onOpenPdf={openPdf}
-                        />
-                      );
-                    })}
+            <aside className="soft-panel overflow-hidden p-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+              {viewer ? (
+                <div className="flex min-h-[520px] flex-col">
+                  <div className="border-b border-terminal px-4 py-3 text-xs text-secondary">
+                    Inline PDF viewer
                   </div>
-                ))}
-              </section>
-            )}
-
-            {filteredCards.length === 0 && (
-              <div className="py-20 text-center">
-                <Library size={42} className="mx-auto mb-4 text-muted" aria-hidden="true" />
-                <p className="text-secondary">No PYQs matched this filter.</p>
-              </div>
-            )}
-
-            {visibleCount < filteredCards.length && (
-              <div className="flex justify-center py-10">
-                <button type="button" className="btn-primary" onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}>
-                  Load more
-                  <ChevronDown size={15} aria-hidden="true" />
-                </button>
-              </div>
-            )}
+                  <div className="min-h-0 flex-1">
+                    <PdfViewer
+                      src={viewer.src}
+                      initialPage={viewer.page}
+                      title={viewer.title}
+                      pageStatus={viewer.pageStatus}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-[520px] flex-col items-center justify-center gap-3 px-6 py-8 text-center">
+                  <FileText size={28} className="text-muted" aria-hidden="true" />
+                  <div className="text-sm font-semibold text-primary">Select a topper copy PDF</div>
+                  <p className="max-w-xs text-sm leading-6 text-secondary">
+                    Choose any available `View PDF` action on the left to open the mapped page here with pdf.js.
+                  </p>
+                </div>
+              )}
+            </aside>
           </div>
         </section>
       </section>
-
-      {pdf && (
-        <div className="pdf-modal-backdrop" role="dialog" aria-modal="true" aria-label="PDF viewer">
-          <div className="pdf-modal">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-terminal p-4">
-              <div>
-                <div className="text-sm font-semibold">{pdf.title}</div>
-                <div className="mt-1 text-xs text-muted">Source page: {pdf.page}</div>
-              </div>
-              <button type="button" className="btn-secondary" onClick={() => setPdf(null)}>
-                <X size={15} aria-hidden="true" />
-                Close
-              </button>
-            </div>
-            <iframe title={pdf.title} src={pdf.url} className="h-full w-full bg-white" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
-          </div>
-        </div>
-      )}
     </main>
-  );
-}
-
-function PyqCard({
-  card,
-  index,
-  questionsOpen,
-  hasRelevantQuestions,
-  openRelevantQuestions,
-  openSummaries,
-  loadingAnswer,
-  onToggleQuestions,
-  onToggleCopies,
-  onToggleSummary,
-  onOpenPdf,
-}: {
-  card: SubjectPyqCard;
-  index: number;
-  questionsOpen: boolean;
-  hasRelevantQuestions: boolean;
-  openRelevantQuestions: Set<string>;
-  openSummaries: Set<string>;
-  loadingAnswer: string | null;
-  onToggleQuestions: () => void;
-  onToggleCopies: (id: string) => void;
-  onToggleSummary: (answerId: string) => void;
-  onOpenPdf: (answerId: string, titleText: string) => void;
-}) {
-  return (
-    <article className="pyq-card overflow-hidden">
-      <div className="grid gap-4 p-4 sm:grid-cols-[48px_1fr_auto] sm:p-5">
-        <div className="mono-stat hidden h-11 w-11 place-items-center rounded-full bg-[var(--accent-soft)] text-xs text-accent sm:grid">
-          {String(index + 1).padStart(2, "0")}
-        </div>
-
-        <div className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="study-badge">{card.paper}</span>
-            {card.estimatedYear && <span className="study-badge">{card.estimatedYear}</span>}
-            {card.marks && <span className="study-badge">{card.marks} marks</span>}
-            <span className={hasRelevantQuestions ? "study-badge study-badge-accent" : "study-badge"}>
-              {card.relevantQuestionCount} relevant {card.relevantQuestionCount === 1 ? "question" : "questions"}
-            </span>
-            <span className="study-badge">{card.topperCount} {card.topperCount === 1 ? "answer" : "answers"}</span>
-            {yearBuckets(card).map((bucket) => (
-              <span key={bucket.label} className="study-badge">{bucket.label} · {bucket.count}</span>
-            ))}
-          </div>
-
-          <h2 className="question-title text-lg font-semibold leading-8 sm:text-xl">
-            {highlightQuestion(card.question, card.keywords)}
-          </h2>
-
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {uniqueTopics([...card.syllabusTags, ...card.keywords]).slice(0, 8).map((keyword) => (
-              <span key={keyword} className="study-badge">{keyword}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <ProgressToggle questionId={card.id} />
-          <button type="button" className={hasRelevantQuestions ? "btn-primary" : "btn-secondary"} onClick={onToggleQuestions}>
-            <BookOpen size={15} aria-hidden="true" />
-            {questionsOpen ? "Hide questions" : "Relevant questions"}
-          </button>
-        </div>
-      </div>
-
-      {questionsOpen && (
-        <div className="animate-fade-in border-t border-terminal p-4 sm:p-5">
-          <div className="grid gap-4">
-            {card.relevantQuestions.length > 0 ? (
-              card.relevantQuestions.map((relevant) => (
-                <RelevantQuestion
-                  key={`${card.id}-${relevant.id}`}
-                  relevant={relevant}
-                  officialQuestion={card.question}
-                  copiesOpen={openRelevantQuestions.has(relevant.id)}
-                  openSummaries={openSummaries}
-                  loadingAnswer={loadingAnswer}
-                  onToggleCopies={() => onToggleCopies(relevant.id)}
-                  onToggleSummary={onToggleSummary}
-                  onOpenPdf={(answerId, titleText) => onOpenPdf(answerId, titleText)}
-                />
-              ))
-            ) : (
-              <div className="soft-panel-muted p-4 text-sm leading-7 text-secondary">
-                No same-topic answered question is ready for this PYQ yet.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function TopperQuestionTab({
-  questions,
-  openRelevantQuestions,
-  openSummaries,
-  loadingAnswer,
-  onToggleCopies,
-  onToggleSummary,
-  onOpenPdf,
-}: {
-  questions: { card: SubjectPyqCard; relevant: SubjectPyqCard["relevantQuestions"][number] }[];
-  openRelevantQuestions: Set<string>;
-  openSummaries: Set<string>;
-  loadingAnswer: string | null;
-  onToggleCopies: (id: string) => void;
-  onToggleSummary: (answerId: string) => void;
-  onOpenPdf: (answerId: string, titleText: string) => void;
-}) {
-  return (
-    <section className="mt-7 grid gap-4">
-      {questions.map(({ card, relevant }) => (
-        <div key={`${card.id}-${relevant.id}`} className="grid gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <span className="study-badge">{card.paper}</span>
-            {card.estimatedYear && <span className="study-badge">{card.estimatedYear}</span>}
-            <span className="line-clamp-1">{card.question}</span>
-          </div>
-          <RelevantQuestion
-            relevant={relevant}
-            officialQuestion={card.question}
-            copiesOpen={openRelevantQuestions.has(relevant.id)}
-            openSummaries={openSummaries}
-            loadingAnswer={loadingAnswer}
-            onToggleCopies={() => onToggleCopies(relevant.id)}
-            onToggleSummary={onToggleSummary}
-            onOpenPdf={onOpenPdf}
-          />
-        </div>
-      ))}
-      {questions.length === 0 && (
-        <div className="soft-panel-muted p-6 text-sm text-secondary">No matched answer questions found for this filter.</div>
-      )}
-    </section>
-  );
-}
-
-function RelevantQuestion({
-  relevant,
-  officialQuestion,
-  copiesOpen,
-  openSummaries,
-  loadingAnswer,
-  onToggleCopies,
-  onToggleSummary,
-  onOpenPdf,
-}: {
-  relevant: SubjectPyqCard["relevantQuestions"][number];
-  officialQuestion: string;
-  copiesOpen: boolean;
-  openSummaries: Set<string>;
-  loadingAnswer: string | null;
-  onToggleCopies: () => void;
-  onToggleSummary: (answerId: string) => void;
-  onOpenPdf: (answerId: string, titleText: string) => void;
-}) {
-  const topics = [...relevant.syllabusTags, ...relevant.keywords]
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .filter((item, index, values) => values.indexOf(item) === index)
-    .slice(0, 8);
-  const copyGroups = groupTopperCopies(relevant.topperCopies);
-
-  return (
-    <article className="soft-panel-muted overflow-hidden">
-      <div className="grid gap-4 p-4 lg:grid-cols-[1fr_auto] lg:items-start">
-        <div>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="study-badge study-badge-accent">{matchStatusLabel(relevant.matchType, relevant.matchConfidence)}</span>
-            <span className="study-badge">{relevant.topperCount} {relevant.topperCount === 1 ? "answer" : "answers"}</span>
-            {relevant.sourceAvailableCount > 0 && <span className="study-badge">{relevant.sourceAvailableCount} PDFs</span>}
-            {relevant.topperCopies[0]?.institute && <span className="study-badge">{relevant.topperCopies[0].institute}</span>}
-          </div>
-          <h3 className="question-title text-base font-semibold leading-7">{relevant.question}</h3>
-          <p className="mt-2 text-xs leading-6 text-muted">Mapped from PYQ: {officialQuestion}</p>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {topics.map((topic) => (
-              <span key={topic} className="study-badge">{topic}</span>
-            ))}
-          </div>
-          {relevant.matchReason && <p className="mt-3 text-xs leading-6 text-muted">{relevant.matchReason}</p>}
-        </div>
-
-        <div className="flex flex-wrap gap-2 lg:justify-end">
-          <button type="button" className="btn-secondary" onClick={onToggleCopies}>
-            <ChevronDown size={15} aria-hidden="true" />
-            {copiesOpen ? "Hide answers" : "Answer signals"}
-          </button>
-        </div>
-      </div>
-
-      {copiesOpen && (
-        <div className="grid gap-3 border-t border-terminal p-4">
-          {copyGroups.map((group) => (
-            <section key={group.key} className="grid gap-2">
-              {copyGroups.length > 1 && (
-                <div className="overline px-1">{group.label} · {group.copies.length}</div>
-              )}
-              {group.copies.map((copy) => (
-                <TopperCopy
-                  key={copy.answerId}
-                  copy={copy}
-                  relevantQuestion={relevant.question}
-                  summaryOpen={openSummaries.has(copy.answerId)}
-                  loading={loadingAnswer === copy.answerId}
-                  onToggleSummary={() => onToggleSummary(copy.answerId)}
-                  onOpenPdf={() => onOpenPdf(copy.answerId, `${copy.topperName} - ${relevant.paper || relevant.category || "Answer source"}`)}
-                />
-              ))}
-            </section>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function TopperCopy({
-  copy,
-  relevantQuestion,
-  summaryOpen,
-  loading,
-  onToggleSummary,
-  onOpenPdf,
-}: {
-  copy: SubjectPyqCard["relevantQuestions"][number]["topperCopies"][number];
-  relevantQuestion: string;
-  summaryOpen: boolean;
-  loading: boolean;
-  onToggleSummary: () => void;
-  onOpenPdf: () => void;
-}) {
-  const credit = [
-    copy.rank ? `AIR ${copy.rank}` : null,
-    copy.year ? `${copy.year}` : null,
-    copy.institute,
-    copy.marks ? `marks ${copy.marks}` : null,
-    copy.pageHint ? `page ${copy.pageHint}` : null,
-  ].filter(Boolean);
-  const hasSummary = copy.summaryStatus === "available" && Boolean(copy.interpretation || copy.valueAdds.length);
-  const topicValues = copy.valueAdds.filter(Boolean);
-
-  return (
-    <article className="soft-panel p-4">
-      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">{copy.topperName}</span>
-            {credit.map((item) => (
-              <span key={item} className="study-badge">{item}</span>
-            ))}
-          </div>
-          <p className="mt-2 text-xs leading-6 text-muted">{relevantQuestion}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-2 lg:justify-end">
-          <button type="button" className="btn-secondary" onClick={onToggleSummary}>
-            <Sparkles size={15} aria-hidden="true" />
-            {summaryOpen ? "Hide summary" : hasSummary ? "Summary" : "Summary unavailable"}
-          </button>
-          {topicValues.length > 0 && (
-            <button type="button" className="btn-secondary" onClick={onToggleSummary}>
-              <Search size={15} aria-hidden="true" />
-              Topics
-            </button>
-          )}
-          {copy.sourceAvailable && copy.pageHint ? (
-            <button type="button" className="btn-primary" onClick={onOpenPdf} disabled={loading}>
-              {loading ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <FileText size={15} aria-hidden="true" />}
-              Open source page
-            </button>
-          ) : (
-            <span className="study-badge">{pdfStatusLabel()}</span>
-          )}
-        </div>
-      </div>
-
-      {summaryOpen && (
-        <div className="summary-box mt-4 p-4">
-          {hasSummary ? (
-            <div className="space-y-4">
-              {copy.interpretation && (
-                <div className="space-y-2 text-sm leading-7 text-secondary">
-                  {copy.interpretation.split(/\n+/).map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
-                </div>
-              )}
-              {topicValues.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {topicValues.map((value) => (
-                    <span key={value} className="study-badge">{value}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm leading-7 text-secondary">
-              Summary unavailable for this answer source.
-            </p>
-          )}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button type="button" className={active ? "btn-primary" : "btn-secondary"} onClick={onClick}>
-      {children}
-    </button>
   );
 }
 
@@ -625,149 +418,4 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="mt-2 text-2xl font-semibold text-accent">{value}</div>
     </div>
   );
-}
-
-function buildTopicIndex(cards: SubjectPyqCard[]) {
-  const topics = new Map<string, { name: string; pyqs: number; copies: number }>();
-  for (const card of cards) {
-    const cardTopics = new Set([...card.syllabusTags, ...card.keywords].map(cleanTopic).filter(Boolean).slice(0, 12));
-    for (const topic of cardTopics) {
-      const existing = topics.get(topic) || { name: topic, pyqs: 0, copies: 0 };
-      existing.pyqs += 1;
-      existing.copies += card.topperCount;
-      topics.set(topic, existing);
-    }
-  }
-  return [...topics.values()].sort((a, b) => b.copies - a.copies || b.pyqs - a.pyqs || a.name.localeCompare(b.name));
-}
-
-function matchesWorkspaceFilters(card: SubjectPyqCard, query: string, selectedTopic: string | null) {
-  if (selectedTopic) {
-    const topics = [...card.syllabusTags, ...card.keywords].map(cleanTopic);
-    if (!topics.includes(cleanTopic(selectedTopic))) return false;
-  }
-
-  const terms = query.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 1);
-  if (terms.length === 0) return true;
-  const haystack = [
-    card.question,
-    card.paper,
-    card.category,
-    card.estimatedYear,
-    card.marks,
-    card.syllabusTags.join(" "),
-    card.keywords.join(" "),
-    ...card.relevantQuestions.flatMap((relevant) => [
-      relevant.question,
-      relevant.matchType,
-      relevant.matchReason,
-      relevant.syllabusTags.join(" "),
-      relevant.keywords.join(" "),
-      ...relevant.topperCopies.flatMap((copy) => [
-        copy.topperName,
-        copy.rank ? `AIR ${copy.rank}` : "",
-        copy.year,
-        copy.institute,
-        copy.marks,
-        copy.pageHint ? `page ${copy.pageHint}` : "",
-        copy.valueAdds.join(" "),
-      ]),
-    ]),
-  ].join(" ").toLowerCase();
-
-  return terms.every((term) => haystack.includes(term));
-}
-
-function groupCardsByYear(cards: SubjectPyqCard[]) {
-  const groups = new Map<string, SubjectPyqCard[]>();
-  for (const card of cards) {
-    const label = card.estimatedYear ? String(card.estimatedYear) : "Year not tagged";
-    const bucket = groups.get(label) || [];
-    bucket.push(card);
-    groups.set(label, bucket);
-  }
-  return [...groups.entries()].map(([label, groupCards]) => ({ label, cards: groupCards }));
-}
-
-function flattenRelevantQuestions(cards: SubjectPyqCard[]) {
-  return cards
-    .flatMap((card) => card.relevantQuestions.map((relevant) => ({ card, relevant })))
-    .sort((a, b) => b.relevant.topperCount - a.relevant.topperCount || b.relevant.matchConfidence - a.relevant.matchConfidence);
-}
-
-function groupTopperCopies(copies: SubjectPyqCard["relevantQuestions"][number]["topperCopies"]) {
-  const groups = new Map<string, typeof copies>();
-  for (const copy of copies) {
-    const key = [copy.topperName || "Anonymous topper", copy.institute || "No coaching", copy.year || "No year"].join("|");
-    const bucket = groups.get(key) || [];
-    bucket.push(copy);
-    groups.set(key, bucket);
-  }
-  return [...groups.entries()].map(([key, groupCopies]) => ({
-    key,
-    label: key.split("|").filter((part) => !part.startsWith("No ")).join(" · ") || "Anonymous topper",
-    copies: groupCopies,
-  }));
-}
-
-function yearBuckets(card: SubjectPyqCard) {
-  const counts = new Map<string, number>();
-  for (const relevant of card.relevantQuestions) {
-    for (const copy of relevant.topperCopies) {
-      const label = copy.year ? String(copy.year) : "N/A";
-      counts.set(label, (counts.get(label) || 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 4);
-}
-
-function cleanTopic(value: string) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function uniqueTopics(values: string[]) {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const value of values) {
-    const clean = cleanTopic(value);
-    if (!clean || seen.has(clean)) continue;
-    seen.add(clean);
-    out.push(clean);
-  }
-  return out;
-}
-
-function pdfStatusLabel() {
-  return "Source page pending";
-}
-
-function matchStatusLabel(matchType: string, confidence: number) {
-  if (["direct", "exact"].includes(matchType)) return "Direct";
-  if (["strong", "high-confidence"].includes(matchType)) return "Strong";
-  if (matchType === "topic-match") return `Topic match ${Math.round(confidence * 100)}%`;
-  if (matchType === "loose-topic-match") return `Loose topic ${Math.round(confidence * 100)}%`;
-  return `Topic match ${Math.round(confidence * 100)}%`;
-}
-
-function highlightQuestion(question: string, keywords: string[]) {
-  const usable = keywords
-    .map((keyword) => keyword.trim())
-    .filter((keyword) => keyword.length >= 4)
-    .sort((a, b) => b.length - a.length)
-    .slice(0, 6);
-
-  if (usable.length === 0) return question;
-
-  const pattern = new RegExp(`(${usable.map(escapeRegex).join("|")})`, "gi");
-  return question.split(pattern).map((part, index) => {
-    const matched = usable.some((keyword) => keyword.toLowerCase() === part.toLowerCase());
-    return matched ? <mark key={`${part}-${index}`} className="keyword-mark">{part}</mark> : <span key={`${part}-${index}`}>{part}</span>;
-  });
-}
-
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

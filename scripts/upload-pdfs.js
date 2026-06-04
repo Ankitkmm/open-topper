@@ -40,6 +40,13 @@ function extractFileId(filename) {
   return filename.replace(/\.pdf$/i, "").replace(/^drive_/, "");
 }
 
+function canonicalR2Key(filename, fileId) {
+  const safeId = String(fileId || "")
+    .replace(/[^A-Za-z0-9_-]/g, "")
+    .slice(0, 96);
+  return `sources/${safeId || extractFileId(filename)}.pdf`;
+}
+
 function loadMap() {
   try {
     if (fs.existsSync(MAP_FILE))
@@ -54,7 +61,7 @@ function saveMap(map) {
 }
 
 async function uploadOne(filePath, filename, fileId, map) {
-  const r2Key = filename;
+  const r2Key = canonicalR2Key(filename, fileId);
 
   // Skip if already uploaded
   try {

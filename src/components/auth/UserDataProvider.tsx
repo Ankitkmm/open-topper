@@ -59,7 +59,7 @@ export function UserDataProvider({
   const value = useMemo<UserDataContextValue>(
     () => ({
       activityMap,
-      authAvailable: false,
+      authAvailable,
       isAuthenticated: false,
       status,
       trackActivity(amount = 1) {

@@ -13,22 +13,14 @@ import {
 import { AuthControls } from "@/components/auth/AuthControls";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingShell";
 import { SITE_NAME, SITE_DOMAIN, WAITLIST_LINK } from "@/lib/marketing";
-import { getOfficialPyqStats, getOfficialSubjectPyqs } from "@/lib/official-pyqs";
+import { getBrowseStats, getFeaturedSubjectQuestion } from "@/lib/pyq";
+import { displayPublicTopperName } from "@/lib/public-records";
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} | Track prep, search PYQs, revise smarter`,
   description:
     "UPSCat helps aspirants search PYQs, study topper approaches, and track preparation with more clarity.",
 };
-
-function loadStats() {
-  const stats = getOfficialPyqStats();
-  return {
-    totalQuestions: stats.totalQuestions,
-    answerLinks: stats.linkedCopies,
-    categoryCounts: new Map(stats.categories.map((item) => [item.name, item.count])),
-  };
-}
 
 const ENTRY_POINTS = [
   { href: "/gs1", title: "GS I", subtitle: "History, society, geography", category: "GS 1" },
@@ -37,7 +29,8 @@ const ENTRY_POINTS = [
   { href: "/gs4", title: "GS IV", subtitle: "Ethics and case studies", category: "GS 4" },
   { href: "/essay", title: "Essay", subtitle: "Themes and writing paths", category: "Essay" },
   { href: "/browse", title: "Browse all", subtitle: "Search across questions", category: "All" },
-] as const;
+  { href: "/analytics", title: "Analytics", subtitle: "See what gets asked most", category: "All" },
+];
 
 const PRODUCT_COLUMNS = [
   {
@@ -74,10 +67,10 @@ const PLUS_FEATURES = [
   "Early access to future agent workflows",
 ];
 
-export default function LandingPage() {
-  const stats = loadStats();
-  const featuredCard = getOfficialSubjectPyqs("gs1", "", 1)[0];
-  const relatedQuestions = featuredCard?.relevantQuestions.slice(0, 2) || [];
+export default async function LandingPage() {
+  const stats = await getBrowseStats();
+  const featuredCard = await getFeaturedSubjectQuestion("gs1");
+  const featuredCopies = featuredCard?.linkedInsights.slice(0, 2) || [];
 
   return (
     <main className="library-page min-h-screen overflow-hidden">
@@ -183,21 +176,17 @@ export default function LandingPage() {
                       <span className="study-badge">{featuredCard.paper}</span>
                       {featuredCard.estimatedYear && <span className="study-badge">{featuredCard.estimatedYear}</span>}
                       {featuredCard.marks && <span className="study-badge">{featuredCard.marks} marks</span>}
-                      <span className="study-badge study-badge-accent">{featuredCard.relevantQuestionCount} relevant questions</span>
-                      <span className="study-badge">{featuredCard.topperCount} answer links</span>
+                      <span className="study-badge study-badge-accent">{featuredCard.syllabusPath.at(-1)}</span>
+                      <span className="study-badge">{featuredCard.topperCount} topper copies</span>
                     </div>
 
                     <div>
                       <h3 className="max-w-3xl text-[1.65rem] font-semibold leading-tight tracking-[-0.03em] text-[var(--question)] sm:text-[2rem]">
                         {featuredCard.question}
                       </h3>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {featuredCard.keywords.slice(0, 4).map((keyword) => (
-                          <span key={keyword} className="study-badge">
-                            {keyword}
-                          </span>
-                        ))}
-                      </div>
+                      <p className="mt-4 max-w-3xl text-sm leading-7 text-secondary">
+                        {featuredCard.syllabusPath.at(-1)}
+                      </p>
                     </div>
 
                     <div className="grid gap-3 sm:grid-cols-2">
@@ -210,20 +199,21 @@ export default function LandingPage() {
                         </div>
                       </div>
                       <div className="rounded-[22px] border border-terminal bg-[color-mix(in_srgb,var(--bg-surface)_74%,transparent)] p-4">
-                        <div className="overline">Related question trail</div>
+                        <div className="overline">Topper copies</div>
                         <div className="mt-3 grid gap-3">
-                          {relatedQuestions.length > 0 ? (
-                            relatedQuestions.map((question) => (
-                              <div key={question.id} className="rounded-[18px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_88%,transparent)] px-3 py-3 text-sm leading-6 text-secondary">
-                                <div className="font-semibold text-primary">{question.question}</div>
+                          {featuredCopies.length > 0 ? (
+                            featuredCopies.map((copy) => (
+                              <div key={copy.answerId} className="rounded-[18px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_88%,transparent)] px-3 py-3 text-sm leading-6 text-secondary">
+                                <div className="font-semibold text-primary">{displayPublicTopperName(copy.topperName)}</div>
                                 <div className="mt-1 text-xs text-muted">
-                                  {question.topperCount} linked copies · {question.sourceAvailableCount} source pages
+                                  {copy.pageHint ? `Page ${copy.pageHint}` : "Page pending"}
+                                  {copy.sourceAvailable ? " · source ready" : " · source pending"}
                                 </div>
                               </div>
                             ))
                           ) : (
                             <div className="rounded-[18px] border border-terminal bg-[color-mix(in_srgb,var(--bg-elevated)_88%,transparent)] px-3 py-3 text-sm leading-6 text-secondary">
-                              Open a paper and follow related questions, answer signals, and source trails from the same workspace.
+                              Open a paper, then move straight from the PYQ to attached topper copies and source pages.
                             </div>
                           )}
                         </div>

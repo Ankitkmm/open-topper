@@ -1,133 +1,176 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-import { APP_DATA_DIR } from "./paths";
+import {
+  getSubjectDefinition,
+  getSubjectDefinitions,
+  getSubjectKeyFromValue,
+  type SubjectKey,
+} from "./subject-definitions";
+import {
+  getWorkspaceNode,
+  getWorkspaceQuestionById,
+  getSubjectWorkspaceQuestions,
+  getWorkspaceStats,
+  getWorkspaceSyllabusNodes,
+  searchWorkspaceQuestions,
+  type WorkspaceQuestion,
+  type WorkspaceSyllabusNode,
+} from "./question-bank";
+import { searchAnswerCards } from "./db-search";
+import { cleanPublicText, isPublishableQuestionText, normalizePublicTopperName } from "./public-records";
+import type { SearchAnswerCard } from "./search-api";
 
-export interface SubjectPyqCard {
-  id: string;
-  question: string;
+export const SUBJECT_ROUTES = Object.fromEntries(
+  getSubjectDefinitions().map((subject) => [
+    subject.key,
+    {
+      key: subject.key,
+      label: subject.title,
+      shortLabel: subject.shortLabel,
+      description: subject.description,
+      href: subject.href,
+      categories: subject.categoryLabels,
+      paper: subject.paperLabel,
+    },
+  ]),
+) as Record<SubjectKey, {
+  key: SubjectKey;
+  label: string;
+  shortLabel: string;
+  description: string;
+  href: string;
+  categories: string[];
   paper: string;
-  category: string;
-  estimatedYear: number | null;
-  marks: number | null;
-  syllabusTags: string[];
-  keywords: string[];
-  topperCount: number;
-  relevantQuestionCount: number;
-  relevantQuestions: RelevantQuestion[];
-}
+}>;
 
-export interface RelevantQuestion {
-  id: string;
-  question: string;
-  paper: string;
-  category: string;
-  syllabusTags: string[];
-  keywords: string[];
-  matchType: string;
-  matchConfidence: number;
-  matchReason: string;
-  reviewStatus: "published" | "needs_review";
-  topperCount: number;
-  sourceAvailableCount: number;
-  topperCopies: TopperCopy[];
-}
-
-export interface TopperCopy {
-    answerId: string;
-    sourceAvailable: boolean;
-    sourceStatus?: string;
-    topperName: string;
-    nameStatus?: string;
-    rank: number | null;
-    year: number | null;
-    institute: string | null;
-    marks: string | number | null;
-    interpretation: string;
-    summaryStatus?: string;
-    valueAdds: string[];
-    pageHint: number | null;
-    pageStatus?: "valid" | "missing" | "fallback" | "out_of_range";
-    matchType?: string;
-    matchConfidence?: number;
-    matchedQuestion?: string;
-}
-
-interface SafePyqCard {
-  id: string;
-  question: string;
-  paper: string;
-  category: string;
-  estimatedYear: number | null;
-  marks?: number | null;
-  syllabusTags: string[];
-  keywords: string[];
-  topperCount: number;
-  relevantQuestionCount?: number;
-  relevantQuestions?: RelevantQuestion[];
-  linkedInsights?: TopperCopy[];
-}
-
-interface SafePyqDataset {
-  generatedAt: string;
-  count: number;
-  cards: SafePyqCard[];
-}
-
-let cachedDataset: SafePyqDataset | null = null;
-
-export const SUBJECT_ROUTES: Record<string, { label: string; categories: string[]; papers: string[] }> = {
-  gs1: { label: "GS Paper I", categories: ["GS 1", "History"], papers: ["GS-1", "GS 1"] },
-  gs2: { label: "GS Paper II", categories: ["GS 2"], papers: ["GS-2", "GS 2"] },
-  gs3: { label: "GS Paper III", categories: ["GS 3"], papers: ["GS-3", "GS 3"] },
-  gs4: { label: "GS Paper IV", categories: ["GS 4"], papers: ["GS-4", "GS 4"] },
-  essay: { label: "Essay", categories: ["Essay"], papers: ["Essay"] },
-  geography: { label: "Geography Optional", categories: ["Geography"], papers: ["Geography"] },
-  sociology: { label: "Sociology Optional", categories: ["Sociology"], papers: ["Sociology"] },
-  psir: { label: "PSIR Optional", categories: ["PSIR"], papers: ["PSIR"] },
-  "public-administration": { label: "Public Administration Optional", categories: ["Public Administration"], papers: ["Public Administration"] },
-  anthropology: { label: "Anthropology Optional", categories: ["Anthropology"], papers: ["Anthropology"] },
-};
-
-export function loadPyqDataset(): SafePyqDataset {
-  if (cachedDataset) return cachedDataset;
-  try {
-    cachedDataset = JSON.parse(readFileSync(join(APP_DATA_DIR, "public-pyqs.json"), "utf-8")) as SafePyqDataset;
-  } catch {
-    cachedDataset = { generatedAt: "", count: 0, cards: [] };
+export async function getSubjectPyqs(
+  subjectKey: SubjectKey,
+  query = "",
+  limit = 120,
+  syllabusNodeId = "",
+): Promise<WorkspaceQuestion[]> {
+  if (query.trim()) {
+    return searchHybridWorkspaceQuestions({
+      query,
+      subjectKey,
+      syllabusNodeId,
+      limit,
+    });
   }
-  return cachedDataset;
+  return getSubjectWorkspaceQuestions(subjectKey, query, syllabusNodeId).slice(0, limit);
 }
 
-export function getSubjectPyqs(subjectKey: string, query = "", limit = 80): SubjectPyqCard[] {
-  const config = SUBJECT_ROUTES[subjectKey];
-  if (!config) return [];
-
-  const q = query.trim().toLowerCase();
-  const cards = loadPyqDataset().cards
-    .filter((card) => matchesSubject(card, config))
-    .filter((card) => !q || searchableText(card).includes(q))
-    .slice(0, limit);
-
-  return cards.map((card) => ({
-    ...card,
-    marks: card.marks ?? null,
-    relevantQuestionCount: card.relevantQuestionCount ?? card.relevantQuestions?.length ?? 0,
-    relevantQuestions: card.relevantQuestions ?? [],
-  }));
+export async function getSubjectSyllabusNodes(subjectKey: SubjectKey): Promise<WorkspaceSyllabusNode[]> {
+  return getWorkspaceSyllabusNodes(subjectKey);
 }
 
-function matchesSubject(card: SafePyqCard, config: typeof SUBJECT_ROUTES[string]) {
-  const haystack = `${card.paper} ${card.category} ${card.question}`.toLowerCase();
-  return config.papers.some((paper) => card.paper.toLowerCase() === paper.toLowerCase())
-    || config.categories.some((category) => haystack.includes(category.toLowerCase()));
+export async function getBrowsePyqs(options: {
+  query?: string;
+  category?: string;
+  syllabusNodeId?: string;
+  limit?: number;
+}) {
+  const subjectKey = options.category ? getSubjectKeyFromValue(options.category) : null;
+  if ((options.query || "").trim()) {
+    return searchHybridWorkspaceQuestions({
+      query: options.query || "",
+      subjectKey: subjectKey || "",
+      syllabusNodeId: options.syllabusNodeId || "",
+      limit: options.limit || 160,
+    });
+  }
+
+  return searchWorkspaceQuestions({
+    query: options.query || "",
+    subjectKey: subjectKey || "",
+    syllabusNodeId: options.syllabusNodeId || "",
+    limit: options.limit || 160,
+  });
 }
 
-function searchableText(card: SafePyqCard) {
-  return [
-    card.question,
-    card.paper,
-    card.category,
-    card.keywords.join(" "),
-    card.syllabusTags.join(" "),
-  ].join(" ").toLowerCase();
+export async function getFeaturedSubjectQuestion(subjectKey: SubjectKey) {
+  return getSubjectWorkspaceQuestions(subjectKey, "", "").find((question) => question.linkedInsights.length > 0) || null;
+}
+
+export async function getBrowseStats() {
+  return getWorkspaceStats();
+}
+
+export function getSubjectPageMeta(subjectKey: SubjectKey) {
+  return getSubjectDefinition(subjectKey);
+}
+
+export async function searchHybridWorkspaceQuestions(options: {
+  query: string;
+  subjectKey?: SubjectKey | "";
+  syllabusNodeId?: string;
+  limit: number;
+}) {
+  const syllabusLabel = options.syllabusNodeId
+    ? getWorkspaceNode(options.syllabusNodeId)?.label || ""
+    : "";
+  const response = await searchAnswerCards({
+    q: options.query,
+    subject: options.subjectKey || undefined,
+    syllabus: syllabusLabel || undefined,
+    limit: options.limit,
+  });
+
+  return toWorkspaceQuestions(response.results, options.limit);
+}
+
+function toWorkspaceQuestions(docs: SearchAnswerCard[], limit: number) {
+  const grouped = new Map<string, WorkspaceQuestion>();
+
+  for (const doc of docs) {
+    if (!isPublishableQuestionText(doc.question)) continue;
+
+    const existingQuestion = getWorkspaceQuestionById(doc.questionId);
+    const subjectKey = doc.subjectKey as SubjectKey;
+    const subject = getSubjectDefinition(subjectKey);
+    const question = grouped.get(doc.questionId) || {
+      id: doc.questionId,
+      question: existingQuestion?.question || cleanPublicText(doc.question),
+      paper: existingQuestion?.paper || doc.paper,
+      category: existingQuestion?.category || subject.title,
+      subjectKey,
+      subjectLabel: existingQuestion?.subjectLabel || doc.subjectLabel || subject.shortLabel,
+      estimatedYear: existingQuestion?.estimatedYear ?? null,
+      marks: existingQuestion?.marks ?? extractMarks(doc.question),
+      syllabusNodeId: existingQuestion?.syllabusNodeId || "",
+      syllabusPath: existingQuestion?.syllabusPath?.length ? existingQuestion.syllabusPath : doc.syllabusPath,
+      linkedInsights: [],
+      topperCount: 0,
+      searchText: existingQuestion?.searchText || cleanPublicText(doc.question).toLowerCase(),
+    } satisfies WorkspaceQuestion;
+
+    if (question.linkedInsights.some((copy) => copy.answerId === doc.answerId)) {
+      grouped.set(doc.questionId, question);
+      continue;
+    }
+
+    question.linkedInsights.push({
+      answerId: doc.answerId,
+      topperName: normalizePublicTopperName(doc.topperName),
+      rank: doc.rank,
+      year: doc.attemptYear,
+      institute: cleanPublicText(doc.institute || "") || null,
+      marks: cleanPublicText(doc.marksObtained || "") || null,
+      pageHint: doc.pdfPage,
+      pageStatus: doc.pageStatus || null,
+      sourceAvailable: doc.pdfAvailable,
+      sourceStatus: doc.sourceStatus,
+      summary: cleanPublicText(doc.summary),
+      summaryAvailable: cleanPublicText(doc.summary).length >= 80,
+      summarySource: cleanPublicText(doc.summary) ? "search" : null,
+    });
+    question.topperCount = question.linkedInsights.length;
+    grouped.set(doc.questionId, question);
+  }
+
+  return [...grouped.values()].slice(0, limit);
+}
+
+function extractMarks(question: string) {
+  const match = String(question || "").match(/\b(10|15|20|25|125|250)\s*marks?\b/i)
+    || String(question || "").match(/\((10|15|20|25)\s*m/i);
+  return match ? Number(match[1]) : null;
 }

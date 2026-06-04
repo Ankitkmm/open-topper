@@ -1,22 +1,25 @@
 import type { Metadata } from "next";
 import { SubjectWorkspace } from "@/components/SubjectWorkspace";
-import { SUBJECT_ROUTES } from "@/lib/pyq";
-import { getOfficialSubjectPyqs } from "@/lib/official-pyqs";
+import { getSubjectPageMeta, getSubjectPyqs, getSubjectSyllabusNodes } from "@/lib/pyq";
 
-export const metadata: Metadata = { title: "GS Paper II - UPSCat", description: "Polity, Governance, Constitution, and IR PYQs with guided answer-pattern search." };
+export const metadata: Metadata = { title: "GS Paper II - UPSCat", description: "Polity, governance, social justice, and IR PYQs arranged by the actual GS II syllabus." };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string; syllabus?: string }> }) {
   const params = await searchParams;
-  const cards = getOfficialSubjectPyqs("gs2", "", 1000);
-  const subject = SUBJECT_ROUTES["gs2"];
+  const subject = getSubjectPageMeta("gs2");
+  const cards = await getSubjectPyqs("gs2", params.q || "", 1000, params.syllabus || "");
+  const syllabusNodes = await getSubjectSyllabusNodes("gs2");
 
   return (
     <SubjectWorkspace
       subjectKey="gs2"
-      title={subject.label}
-      description="Polity, Governance, Constitution, and IR PYQs with guided answer-pattern search."
-      cards={cards}
+      title={subject.title}
+      description={subject.description}
+      questions={cards}
+      syllabusNodes={syllabusNodes}
       query={params.q || ""}
+      selectedSyllabusId={params.syllabus || ""}
+      baseHref={subject.href}
     />
   );
 }

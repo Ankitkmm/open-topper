@@ -1,22 +1,25 @@
 import type { Metadata } from "next";
 import { SubjectWorkspace } from "@/components/SubjectWorkspace";
-import { SUBJECT_ROUTES } from "@/lib/pyq";
-import { getOfficialSubjectPyqs } from "@/lib/official-pyqs";
+import { getSubjectPageMeta, getSubjectPyqs, getSubjectSyllabusNodes } from "@/lib/pyq";
 
-export const metadata: Metadata = { title: "GS Paper IV - UPSCat", description: "Ethics PYQs organized around value-adds, examples, and evaluator-facing structure." };
+export const metadata: Metadata = { title: "GS Paper IV - UPSCat", description: "Ethics and case-study PYQs arranged by the actual GS IV syllabus." };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string; syllabus?: string }> }) {
   const params = await searchParams;
-  const cards = getOfficialSubjectPyqs("gs4", "", 1000);
-  const subject = SUBJECT_ROUTES["gs4"];
+  const subject = getSubjectPageMeta("gs4");
+  const cards = await getSubjectPyqs("gs4", params.q || "", 1000, params.syllabus || "");
+  const syllabusNodes = await getSubjectSyllabusNodes("gs4");
 
   return (
     <SubjectWorkspace
       subjectKey="gs4"
-      title={subject.label}
-      description="Ethics PYQs organized around value-adds, examples, and evaluator-facing structure."
-      cards={cards}
+      title={subject.title}
+      description={subject.description}
+      questions={cards}
+      syllabusNodes={syllabusNodes}
       query={params.q || ""}
+      selectedSyllabusId={params.syllabus || ""}
+      baseHref={subject.href}
     />
   );
 }

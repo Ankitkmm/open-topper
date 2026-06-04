@@ -133,7 +133,11 @@ function resolveTopperName(answer) {
   if (extracted) return { value: extracted, source: "extracted", status: "extracted" };
   const filenameName = extractDisplayNameFromFilename(answer.rawFilename || answer.fileName || answer.filename || "");
   if (filenameName) return { value: filenameName, source: "filename", status: "filename" };
-  return { value: "Anonymous topper", source: "anonymous", status: "anonymous" };
+  return { value: null, source: "anonymous", status: "unavailable" };
+}
+
+function displayTopperName(value) {
+  return value || "Name unavailable";
 }
 
 function buildTopperLookup() {
@@ -190,7 +194,7 @@ function extractRankFromAnswer(answer) {
 }
 
 function enrichTopperIdentity(answer, topperNameInfo, yearInfo, topperLookup) {
-  if (!isPlausibleRankName(topperNameInfo.value)) {
+  if (!topperNameInfo.value || !isPlausibleRankName(topperNameInfo.value)) {
     return {
       rank: null,
       rankSource: null,
@@ -310,7 +314,8 @@ function buildSummary(detail, answer, topperName, marksInfo, publicValueAdds, se
 
 function nameStatus(rawName, cleanName) {
   const raw = cleanStudyText(rawName);
-  if (!cleanName || cleanName === "Anonymous topper" || cleanName === "Unknown topper") return "anonymous";
+  if (!cleanName) return "unavailable";
+  if (cleanName === "Unknown topper") return "unknown";
   if (!raw || /\bunknown\b/i.test(raw)) return "unknown";
   return "filename";
 }
@@ -401,8 +406,102 @@ function driveIdFromUrl(url) {
     || null;
 }
 
+function sourceDocumentKey(answer, sourceUrl = "") {
+  const driveId = driveIdFromUrl(answer.sourceCdnUrl || sourceUrl || "");
+  if (driveId) return `drive:${driveId}`;
+
+  const cleaned = cleanPdfFilename(answer.rawFilename || answer.fileName || answer.filename || sourceUrl || "")
+    .replace(/\.pdf$/i, "")
+    .toLowerCase();
+  return cleaned || null;
+}
+
+function sourceIdentityWeight(answer, topperNameInfo) {
+  let weight = topperNameInfo.source === "extracted" ? 8 : topperNameInfo.source === "filename" ? 5 : 0;
+  if (cleanRank(answer.rank)) weight += 2;
+  if (cleanYear(answer.year)) weight += 1;
+  return weight;
+}
+
+function buildSourceIdentityLookup(index, r2Map) {
+  const buckets = new Map();
+
+  for (const entry of index) {
+    const detail = readJson(path.join(MAPPINGS_DIR, entry.file), null);
+    if (!detail) continue;
+
+    for (const answer of detail.linkedTopperAnswers || []) {
+      const source = resolveSourceUrl(answer, r2Map);
+      const key = sourceDocumentKey(answer, source.url);
+      if (!key) continue;
+
+      const topperNameInfo = resolveTopperName(answer);
+      if (!topperNameInfo.value) continue;
+
+      const candidateKey = normalizeNameKey(topperNameInfo.value);
+      if (!candidateKey) continue;
+
+      if (!buckets.has(key)) buckets.set(key, new Map());
+      const group = buckets.get(key);
+      const existing = group.get(candidateKey) || {
+        value: topperNameInfo.value,
+        score: 0,
+        hits: 0,
+      };
+      existing.score += sourceIdentityWeight(answer, topperNameInfo);
+      existing.hits += 1;
+      group.set(candidateKey, existing);
+    }
+  }
+
+  const lookup = new Map();
+  for (const [key, candidates] of buckets.entries()) {
+    const best = [...candidates.values()]
+      .sort((left, right) => right.score - left.score || right.hits - left.hits || left.value.localeCompare(right.value))[0];
+    if (best?.value) lookup.set(key, best.value);
+  }
+
+  return lookup;
+}
+
+function resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup) {
+  const direct = resolveTopperName(answer);
+  if (direct.value) return direct;
+
+  const key = sourceDocumentKey(answer, sourceUrl);
+  const shared = key ? sourceIdentityLookup.get(key) : null;
+  if (shared) {
+    return { value: shared, source: "source_document", status: "shared_source" };
+  }
+
+  return direct;
+}
+
+function isPublishableQuestionText(value) {
+  const clean = cleanStudyText(value);
+  if (!clean) return false;
+
+  const collapsed = clean.toLowerCase().replace(/[\s()[\].,:;'"\-]+/g, "");
+  if (!collapsed || collapsed === "na" || collapsed === "qna") return false;
+  if (/^q\d+[a-z]?$/i.test(collapsed) || /^q[a-z]$/i.test(collapsed)) return false;
+  if (/^\[?na\]?$/i.test(clean)) return false;
+
+  const alphaCount = (clean.match(/[a-z]/gi) || []).length;
+  if (alphaCount < 8 && /^q/i.test(clean)) return false;
+  return true;
+}
+
 function isR2Url(url) {
   return url.includes(".r2.dev") || url.includes(".r2.cloudflarestorage.com");
+}
+
+function isDirectPdfUrl(url) {
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    return /\.pdf$/i.test(new URL(url).pathname);
+  } catch {
+    return /\.pdf(?:[?#]|$)/i.test(url);
+  }
 }
 
 function resolveSourceUrl(answer, r2Map) {
@@ -410,6 +509,9 @@ function resolveSourceUrl(answer, r2Map) {
   if (!sourceUrl) return { url: null, linkSource: "missing" };
   if (isR2Url(sourceUrl)) {
     return { url: sourceUrl, linkSource: "r2-cdn" };
+  }
+  if (isDirectPdfUrl(sourceUrl)) {
+    return { url: sourceUrl, linkSource: "direct-pdf" };
   }
   const driveId = driveIdFromUrl(sourceUrl);
   if (driveId && r2Map[driveId]) return { url: r2Map[driveId], linkSource: "r2-cdn" };
@@ -420,6 +522,7 @@ function sourceQuality(answer, r2Map) {
   const resolved = resolveSourceUrl(answer, r2Map);
   if (resolved.url?.includes(".r2.dev")) return 3;
   if (resolved.url?.includes(".r2.cloudflarestorage.com")) return 3;
+  if (isDirectPdfUrl(resolved.url || "")) return 2;
   return 0;
 }
 
@@ -536,6 +639,7 @@ function build() {
   const index = readJson(INDEX_FILE, []);
   const r2Map = readJson(R2_MAP_FILE, {});
   const topperLookup = buildTopperLookup();
+  const sourceIdentityLookup = buildSourceIdentityLookup(index, r2Map);
   const cards = [];
   const publicCards = [];
   const answerSources = {};
@@ -564,6 +668,7 @@ function build() {
 
     const detail = readJson(path.join(MAPPINGS_DIR, entry.file), null);
     if (!detail) continue;
+    const publishCard = isPublishableQuestionText(detail.questionText);
     const linkedAnswers = (detail.linkedTopperAnswers || [])
       .slice()
       .sort((a, b) => sourceQuality(b, r2Map) - sourceQuality(a, r2Map));
@@ -582,8 +687,9 @@ function build() {
         const source = resolveSourceUrl(answer, r2Map);
         const sourceUrl = source.url;
         const page = inferAnswerPage(detail, pageMeta(answer.exactPageNumber, sourceUrl));
-        const topperNameInfo = resolveTopperName(answer);
+        const topperNameInfo = resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup);
         const cleanTopperName = topperNameInfo.value;
+        const publicTopperName = displayTopperName(cleanTopperName);
         const answerNameStatus = topperNameInfo.status;
         const filename = makePdfFilename(answer, detail, page.normalized || 1);
         const status = sourceStatus(sourceUrl, page);
@@ -596,10 +702,10 @@ function build() {
           .slice(0, 4)
           .map((va) => `${titleCase(va.type)}: ${cleanStudyText(va.value)}`)
           .filter((value) => !value.endsWith(": "));
-        const summaryInfo = buildSummary(detail, answer, cleanTopperName, marksInfo, publicValueAdds, answerId);
+        const summaryInfo = buildSummary(detail, answer, publicTopperName, marksInfo, publicValueAdds, answerId);
 
         audit.totalAnswers += 1;
-        if (topperNameInfo.source === "anonymous") audit.anonymousTopperNames += 1;
+        if (!cleanTopperName) audit.anonymousTopperNames += 1;
         if (marksInfo.source === "inferred") audit.inferredMarks += 1;
         else if (marksInfo.source === "extracted") audit.extractedMarks += 1;
         if (summaryInfo.source === "inferred") audit.inferredSummaries += 1;
@@ -699,32 +805,34 @@ function build() {
       }),
     });
 
-    publicCards.push({
-      id: detail.canonicalQuestionId,
-      question: detail.questionText,
-      paper: detail.paper,
-      category: detail.questionCategory,
-      estimatedYear: detail.estimatedYear,
-      syllabusTags: (detail.syllabusTags || []).map(cleanStudyText).filter(Boolean),
-      keywords: (detail.keywords || []).map(cleanStudyText).filter(Boolean),
-      topperCount: detail.totalLinkedToppers || entry.topperCount || 0,
-      linkedInsights: cards[cards.length - 1].linkedInsights.map((copy) => ({
-        answerId: copy.answerId,
-        sourceAvailable: copy.sourceAvailable,
-        sourceStatus: copy.sourceStatus,
-        topperName: copy.topperName,
-        nameStatus: copy.nameStatus,
-        rank: copy.rank,
-        year: copy.year,
-        institute: copy.institute,
-        marks: copy.marks,
-        pageHint: copy.pageHint,
-        pageStatus: copy.pageStatus,
-        interpretation: copy.interpretation,
-        summaryStatus: copy.summaryStatus,
-        valueAdds: copy.valueAdds,
-      })),
-    });
+    if (publishCard) {
+      publicCards.push({
+        id: detail.canonicalQuestionId,
+        question: detail.questionText,
+        paper: detail.paper,
+        category: detail.questionCategory,
+        estimatedYear: detail.estimatedYear,
+        syllabusTags: (detail.syllabusTags || []).map(cleanStudyText).filter(Boolean),
+        keywords: (detail.keywords || []).map(cleanStudyText).filter(Boolean),
+        topperCount: detail.totalLinkedToppers || entry.topperCount || 0,
+        linkedInsights: cards[cards.length - 1].linkedInsights.map((copy) => ({
+          answerId: copy.answerId,
+          sourceAvailable: copy.sourceAvailable,
+          sourceStatus: copy.sourceStatus,
+          topperName: copy.topperName,
+          nameStatus: copy.nameStatus,
+          rank: copy.rank,
+          year: copy.year,
+          institute: copy.institute,
+          marks: copy.marks,
+          pageHint: copy.pageHint,
+          pageStatus: copy.pageStatus,
+          interpretation: copy.interpretation,
+          summaryStatus: copy.summaryStatus,
+          valueAdds: copy.valueAdds,
+        })),
+      });
+    }
   }
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
