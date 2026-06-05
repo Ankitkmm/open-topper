@@ -1,6 +1,6 @@
 import { writeFileSync } from "fs";
 import { join } from "path";
-import { buildWorkspaceSnapshot } from "../src/lib/question-bank";
+import { buildWorkspaceSnapshot } from "../src/lib/build-workspace-index";
 
 const OUT_FILE = join(process.cwd(), "data", "app", "workspace-index.json");
 

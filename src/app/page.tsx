@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight, FileText, ListChecks, Search, Sparkles } from "lucide-react";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingShell";
 import { SITE_NAME } from "@/lib/marketing";
-import { getBrowseStats, getFeaturedSubjectQuestion } from "@/lib/pyq";
+import { getBrowseStats, getFeaturedSubjectQuestion } from "@/lib/study-page-data";
 import { getSubjectDefinition, getSubjectDefinitions, type SubjectKey } from "@/lib/subject-definitions";
 import { normalizePublicTopperName } from "@/lib/public-records";
 

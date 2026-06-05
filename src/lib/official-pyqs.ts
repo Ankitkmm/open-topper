@@ -1,6 +1,5 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { searchAnswerCards } from "./db-search";
 import type { SubjectPyqCard } from "./search-results";
 import { bestTokenMatchScore, matchesSearchTerm, searchTerms, searchTokens } from "./search-text";
 
@@ -103,88 +102,6 @@ export function getOfficialBrowsePyqs(
     .filter((row) => !cat || cat === "all" || row.category.toLowerCase() === cat || row.subjectKey === cat)
     .filter((row) => !kw || row.keywords.some((item) => item.toLowerCase().includes(kw)))
     .map((row) => ({ row, score: terms.length ? fallbackSearchScore(row, terms) : 1 }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || (right.row.year || 0) - (left.row.year || 0))
-    .slice(0, limit)
-    .map((entry) => toOfficialShell(entry.row));
-}
-
-export async function searchOfficialBrowsePyqs(
-  query = "",
-  category = "",
-  limit = 240,
-): Promise<SubjectPyqCard[]> {
-  const subject = category.trim().toLowerCase();
-  if (!query.trim()) return getOfficialBrowsePyqs("", subject, "", limit);
-
-  const answerResults = await searchAnswerCards({
-    q: query,
-    subject: subject || undefined,
-    limit: Math.min(180, Math.max(60, limit)),
-  });
-  const linksByAnswerId = buildOfficialAnswerLookup();
-  const scoreByOfficialId = new Map<string, number>();
-  const fallbackTerms = searchTerms(query);
-
-  for (const answer of answerResults.results) {
-    const links = linksByAnswerId.get(answer.answerId) || [];
-    for (const link of links) {
-      const score = (answer.score || 0) + link.matchConfidence;
-      scoreByOfficialId.set(link.officialQuestionId, Math.max(scoreByOfficialId.get(link.officialQuestionId) || 0, score));
-    }
-  }
-
-  return loadOfficialRows()
-    .filter((row) => !subject || row.subjectKey === subject || row.category.toLowerCase() === subject)
-    .map((row) => ({
-      row,
-      score: Math.max(scoreByOfficialId.get(row.id) || 0, fallbackSearchScore(row, fallbackTerms) * 0.45),
-    }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || (b.row.year || 0) - (a.row.year || 0))
-    .slice(0, limit)
-    .map((entry) => toOfficialShell(entry.row));
-}
-
-export async function searchOfficialSubjectPyqs(
-  subjectKey: string,
-  query = "",
-  limit = 240,
-  syllabus = "",
-): Promise<SubjectPyqCard[]> {
-  if (!query.trim()) return getOfficialSubjectPyqShells(subjectKey, "", limit, syllabus);
-
-  const syllabusTerms = searchTerms(syllabus);
-  const fallbackTerms = searchTerms(query);
-  const answerResults = await searchAnswerCards({
-    q: query,
-    subject: subjectKey || undefined,
-    syllabus: syllabus || undefined,
-    limit: Math.min(180, Math.max(60, limit)),
-  });
-  const linksByAnswerId = buildOfficialAnswerLookup();
-  const scoreByOfficialId = new Map<string, number>();
-
-  for (const answer of answerResults.results) {
-    const links = linksByAnswerId.get(answer.answerId) || [];
-    for (const link of links) {
-      if (link.officialQuestionId.startsWith(`official_${subjectKey}_`) || link.officialQuestionId === answer.questionId) {
-        const score = (answer.score || 0) + link.matchConfidence;
-        scoreByOfficialId.set(link.officialQuestionId, Math.max(scoreByOfficialId.get(link.officialQuestionId) || 0, score));
-      } else {
-        const score = (answer.score || 0) + link.matchConfidence;
-        scoreByOfficialId.set(link.officialQuestionId, Math.max(scoreByOfficialId.get(link.officialQuestionId) || 0, score));
-      }
-    }
-  }
-
-  return loadOfficialRows()
-    .filter((row) => row.subjectKey === subjectKey)
-    .filter((row) => matchesSyllabus(row, syllabusTerms))
-    .map((row) => ({
-      row,
-      score: Math.max(scoreByOfficialId.get(row.id) || 0, fallbackSearchScore(row, fallbackTerms) * 0.45),
-    }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score || (right.row.year || 0) - (left.row.year || 0))
     .slice(0, limit)

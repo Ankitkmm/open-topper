@@ -1,5 +1,5 @@
 import type { SubjectPyqCard } from "@/lib/search-results";
-import type { WorkspaceQuestion } from "@/lib/question-bank";
+import type { WorkspaceQuestion } from "@/lib/question-bank-runtime";
 
 export type ShellSearchDataset = "official" | "workspace";
 

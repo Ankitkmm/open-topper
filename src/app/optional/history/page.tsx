@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
 import { SubjectWorkspace, SubjectWorkspaceFallback } from "@/components/SubjectWorkspace";
-import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/pyq";
+import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/study-page-data";
 import { getInitialWorkspaceSubjectShells, getSubjectProgressQuestionIds } from "@/lib/static-shell-data";
 
 export const metadata: Metadata = {

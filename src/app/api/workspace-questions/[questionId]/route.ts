@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
-import { getWorkspaceQuestionById } from "@/lib/question-bank";
+import { getWorkspaceQuestionById } from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { PRIVATE_JSON_HEADERS, requireSessionResponseIfConfigured } from "@/lib/session-access";
 

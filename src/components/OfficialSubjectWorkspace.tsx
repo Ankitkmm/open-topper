@@ -8,7 +8,7 @@ import { StudyNav } from "@/components/StudyNav";
 import { ProgressToggle } from "./ProgressToggle";
 import { SubjectProgress } from "./SubjectProgress";
 import type { SubjectPyqCard, TopperCopy } from "@/lib/search-results";
-import type { WorkspaceSyllabusNode } from "@/lib/question-bank";
+import type { WorkspaceSyllabusNode } from "@/lib/question-bank-runtime";
 import { normalizePublicTopperName } from "@/lib/public-records";
 import { makeProgressItemId, progressItemCandidates, type ProgressItemType } from "@/lib/progress-items";
 import type { SubjectKey } from "@/lib/subject-definitions";

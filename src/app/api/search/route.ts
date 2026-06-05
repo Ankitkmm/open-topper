@@ -4,11 +4,8 @@ import {
   getOfficialBrowsePyqs,
   getOfficialQuestionShell,
   getOfficialSubjectPyqShells,
-  searchOfficialBrowsePyqs,
-  searchOfficialSubjectPyqs,
 } from "@/lib/official-pyqs";
-import { getWorkspaceQuestionShellById, searchHybridWorkspaceQuestions } from "@/lib/pyq";
-import { searchWorkspaceQuestions } from "@/lib/question-bank";
+import { getWorkspaceQuestionById, searchWorkspaceQuestions } from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSubjectKeyFromValue, type SubjectKey } from "@/lib/subject-definitions";
 
@@ -73,14 +70,10 @@ async function searchOfficialShells(options: {
   const category = options.subjectKey || options.subject.trim().toLowerCase();
 
   if (options.subjectKey) {
-    return options.query.trim()
-      ? searchOfficialSubjectPyqs(options.subjectKey, options.query, options.limit, options.syllabusId)
-      : getOfficialSubjectPyqShells(options.subjectKey, "", options.limit, options.syllabusId);
+    return getOfficialSubjectPyqShells(options.subjectKey, options.query, options.limit, options.syllabusId);
   }
 
-  return options.query.trim()
-    ? searchOfficialBrowsePyqs(options.query, category, options.limit)
-    : getOfficialBrowsePyqs("", category, "", options.limit);
+  return getOfficialBrowsePyqs(options.query, category, "", options.limit);
 }
 
 async function searchWorkspaceShells(options: {
@@ -91,23 +84,16 @@ async function searchWorkspaceShells(options: {
   limit: number;
 }) {
   if (options.questionId.trim()) {
-    const shell = getWorkspaceQuestionShellById(options.questionId.trim());
-    return shell ? [shell] : [];
+    const shell = getWorkspaceQuestionById(options.questionId.trim());
+    return shell ? [{ ...shell, linkedInsights: [], searchText: undefined }] : [];
   }
 
-  const questions = options.query.trim()
-    ? await searchHybridWorkspaceQuestions({
-      query: options.query,
-      subjectKey: options.subjectKey,
-      syllabusNodeId: options.syllabusId,
-      limit: options.limit,
-    })
-    : searchWorkspaceQuestions({
-      query: "",
-      subjectKey: options.subjectKey,
-      syllabusNodeId: options.syllabusId,
-      limit: options.limit,
-    });
+  const questions = searchWorkspaceQuestions({
+    query: options.query,
+    subjectKey: options.subjectKey,
+    syllabusNodeId: options.syllabusId,
+    limit: options.limit,
+  });
 
   return questions.map((question) => ({
     ...question,

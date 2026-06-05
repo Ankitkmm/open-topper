@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { OfficialSubjectWorkspace } from "@/components/OfficialSubjectWorkspace";
 import { buildShellSearchUrl, type OfficialShellSearchResponse } from "@/lib/shell-search";
 import type { SubjectPyqCard } from "@/lib/search-results";
-import type { WorkspaceSyllabusNode } from "@/lib/question-bank";
+import type { WorkspaceSyllabusNode } from "@/lib/question-bank-runtime";
 import type { SubjectKey } from "@/lib/subject-definitions";
 
 export function OfficialSubjectPageClient({

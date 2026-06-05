@@ -1,7 +1,6 @@
 import { getOfficialBrowsePyqs, getOfficialSubjectPyqShells } from "@/lib/official-pyqs";
-import { getSubjectWorkspaceQuestions, type WorkspaceQuestion } from "@/lib/question-bank";
+import { getSubjectWorkspaceQuestions, type WorkspaceQuestion } from "@/lib/question-bank-runtime";
 import { makeProgressItemId } from "@/lib/progress-items";
-import { getSubjectPyqShells } from "@/lib/pyq";
 import type { SubjectKey } from "@/lib/subject-definitions";
 
 export const INITIAL_BROWSE_SHELL_LIMIT = 240;
@@ -21,7 +20,9 @@ export function getOfficialProgressQuestionIds(subjectKey: SubjectKey) {
 }
 
 export async function getInitialWorkspaceSubjectShells(subjectKey: SubjectKey, limit = INITIAL_SUBJECT_SHELL_LIMIT) {
-  return getSubjectPyqShells(subjectKey, "", limit, "");
+  return getSubjectWorkspaceQuestions(subjectKey, "", "")
+    .slice(0, limit)
+    .map((question) => ({ ...question, linkedInsights: [] }));
 }
 
 export function getSubjectProgressQuestionIds(subjectKey: SubjectKey) {

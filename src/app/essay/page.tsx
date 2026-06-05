@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
 import { OfficialSubjectPageClient } from "@/components/OfficialSubjectPageClient";
 import { OfficialSubjectWorkspace } from "@/components/OfficialSubjectWorkspace";
-import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/pyq";
+import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/study-page-data";
 import { getInitialOfficialSubjectShells, getOfficialProgressQuestionIds } from "@/lib/static-shell-data";
 
 export const metadata: Metadata = { title: "Essay - UPSCat", description: "Essay prompts grouped by theme, with search and topper copies kept simple." };

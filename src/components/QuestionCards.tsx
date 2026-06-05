@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, BookOpen, Search } from "lucide-react";
 import { StudyNav } from "@/components/StudyNav";
 import { getSubjectDefinition, getSubjectDefinitions } from "@/lib/subject-definitions";
-import type { WorkspaceQuestion } from "@/lib/question-bank";
+import type { WorkspaceQuestion } from "@/lib/question-bank-runtime";
 
 interface Props {
   initialQuestions: WorkspaceQuestion[];
