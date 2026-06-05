@@ -36,3 +36,4 @@
 - 2026-06-05: Auth/session handling now uses native Supabase SSR (`@supabase/ssr` + `proxy.ts`) instead of NextAuth; gated content and progress sync rely on user-session auth with RLS.
 - 2026-06-05: Runtime PDF/source datasets are hardened to R2-only URLs. Non-R2 direct PDF sources are quarantined at build time and are not exposed to the viewer.
 - 2026-06-05: Unused/internal content APIs (`/api/questions*`, `/api/answers*`, `/api/internal/*`) are auth-gated when Supabase auth is configured to reduce scrapeable surface.
+- 2026-06-05: `scripts/sync-pdf-runtime-data.js` must fall back to committed `data/pdf-runtime/*` files when private `data/app/*` runtime sources are absent in CI/deploy builds (for example Vercel with ignored private files).

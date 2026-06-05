@@ -12,10 +12,20 @@ for (const file of FILES) {
   const source = path.join(SOURCE_DIR, file);
   const target = path.join(TARGET_DIR, file);
 
-  if (!fs.existsSync(source)) {
-    throw new Error(`Missing source runtime file: ${source}`);
+  if (fs.existsSync(source)) {
+    fs.copyFileSync(source, target);
+    console.log(`synced ${path.relative(ROOT, target)}`);
+    continue;
   }
 
-  fs.copyFileSync(source, target);
-  console.log(`synced ${path.relative(ROOT, target)}`);
+  if (fs.existsSync(target)) {
+    console.warn(
+      `source missing for ${file}; keeping existing ${path.relative(ROOT, target)}`,
+    );
+    continue;
+  }
+
+  throw new Error(
+    `Missing source runtime file and fallback target: ${source} -> ${target}`,
+  );
 }
