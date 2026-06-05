@@ -3,6 +3,7 @@ import {
   ANSWER_SOURCE_HEADERS,
 } from "@/lib/answer-sources";
 import { buildPdfEmbedResponse, enforcePdfAccess } from "@/lib/pdf-access";
+import { requireSessionResponseIfConfigured } from "@/lib/session-access";
 
 export async function POST(req: NextRequest) {
   let body: { answerId?: unknown };
@@ -13,14 +14,18 @@ export async function POST(req: NextRequest) {
   }
 
   const answerId = typeof body.answerId === "string" ? body.answerId : "";
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
   const accessError = await enforcePdfAccess(req, answerId);
   if (accessError) return accessError;
 
   const payload = buildPdfEmbedResponse(answerId);
-  if (!payload) return Response.json({ error: "Source not available." }, { status: 404, headers: ANSWER_SOURCE_HEADERS });
+  if (!payload.ok) {
+    return Response.json({ error: payload.error }, { status: payload.status, headers: ANSWER_SOURCE_HEADERS });
+  }
 
   return Response.json(
-    payload,
+    payload.payload,
     { headers: ANSWER_SOURCE_HEADERS },
   );
 }

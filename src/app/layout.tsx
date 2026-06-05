@@ -1,7 +1,8 @@
-import { IBM_Plex_Mono, Sora } from "next/font/google";
+import { IBM_Plex_Mono, Inter, Newsreader } from "next/font/google";
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { isSupabaseEmailAuthConfigured } from "@/lib/env";
 import { SITE_NAME } from "@/lib/marketing";
 
 export const metadata: Metadata = {
@@ -21,20 +22,28 @@ export const metadata: Metadata = {
   },
 };
 
-const sora = Sora({
+const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   display: "swap",
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
+const newsreader = Newsreader({
   subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
+  variable: "--font-newsreader",
   display: "swap",
-  weight: ["400", "500", "700"],
+  weight: ["400", "500", "600"],
+  style: ["normal", "italic"],
 });
 
-const authAvailable = false;
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  variable: "--font-plex",
+  display: "swap",
+  weight: ["400", "500", "600"],
+});
+
+const authAvailable = isSupabaseEmailAuthConfigured();
 
 export default function RootLayout({
   children,
@@ -44,8 +53,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
-      className={`${sora.variable} ${ibmPlexMono.variable}`}
+      className={`${inter.variable} ${newsreader.variable} ${ibmPlexMono.variable}`}
     >
       <body suppressHydrationWarning>
         <AppShell authAvailable={authAvailable}>{children}</AppShell>

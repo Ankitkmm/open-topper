@@ -1,10 +1,31 @@
 import { NextRequest } from "next/server";
-import { getSubjectKeyFromValue } from "@/lib/subject-definitions";
+import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
 import { searchWorkspaceQuestions } from "@/lib/question-bank";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { PRIVATE_JSON_HEADERS, requireSessionResponseIfConfigured } from "@/lib/session-access";
+import { getSubjectKeyFromValue } from "@/lib/subject-definitions";
 
 const PAGE_SIZE = 30;
 
 export async function GET(req: NextRequest) {
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
+
+  const limitState = await checkRateLimit(req, {
+    scope: "questions-list",
+    max: getSearchRateLimitMax(),
+    windowMs: getRateLimitWindowMs(),
+  });
+  if (!limitState.ok) {
+    return Response.json({ error: "Too many requests. Please slow down." }, {
+      status: 429,
+      headers: {
+        ...PRIVATE_JSON_HEADERS,
+        "Retry-After": String(Math.max(1, Math.ceil((limitState.resetAt - Date.now()) / 1000))),
+      },
+    });
+  }
+
   const q = req.nextUrl.searchParams.get("q") || "";
   const category = req.nextUrl.searchParams.get("category") || "";
   const syllabusNodeId = req.nextUrl.searchParams.get("syllabusId") || "";
@@ -38,11 +59,6 @@ export async function GET(req: NextRequest) {
       hasMore: offset + limit < results.length,
       total: results.length,
     },
-    {
-      headers: {
-        "X-Robots-Tag": "noindex, nofollow, noarchive",
-        "Cache-Control": "private, no-store",
-      },
-    },
+    { headers: PRIVATE_JSON_HEADERS },
   );
 }

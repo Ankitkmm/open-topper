@@ -1,18 +1,16 @@
 "use client";
 
-import { startTransition, useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, FileText, Loader2, Search, Sparkles } from "lucide-react";
-import { AuthControls } from "@/components/auth/AuthControls";
+import { ExternalLink, Loader2, Search, Sparkles } from "lucide-react";
 import { useUserData } from "@/components/auth/UserDataProvider";
-import { ThemeSwitcher } from "./ThemeProvider";
+import { StudyNav } from "@/components/StudyNav";
 import { ProgressToggle } from "./ProgressToggle";
 import { SubjectProgress } from "./SubjectProgress";
-import { PdfViewer } from "./PdfViewer";
-import { getSubjectDefinitions, type SubjectKey } from "@/lib/subject-definitions";
+import { type SubjectKey } from "@/lib/subject-definitions";
 import type { WorkspaceQuestion, WorkspaceSyllabusNode } from "@/lib/question-bank";
-import { displayPublicTopperName } from "@/lib/public-records";
+import { normalizePublicTopperName } from "@/lib/public-records";
+import { makeProgressItemId, progressItemCandidates, type ProgressItemType } from "@/lib/progress-items";
 
 interface SubjectWorkspaceProps {
   subjectKey: SubjectKey;
@@ -22,33 +20,31 @@ interface SubjectWorkspaceProps {
   syllabusNodes: WorkspaceSyllabusNode[];
   query?: string;
   selectedSyllabusId?: string;
+  progressQuestionIds?: string[];
   baseHref: string;
 }
 
-interface ViewerState {
-  src: string;
-  title: string;
-  page: number;
-  pageStatus?: "valid" | "missing" | "fallback" | "out_of_range" | null;
-}
-
 export function SubjectWorkspace({
-  subjectKey,
   title,
   description,
   questions,
   syllabusNodes,
   query = "",
   selectedSyllabusId = "",
+  progressQuestionIds,
   baseHref,
 }: SubjectWorkspaceProps) {
   const router = useRouter();
-  const { trackActivity } = useUserData();
+  const { authAvailable, isAuthenticated, progressMap, trackActivity } = useUserData();
+  const [isPending, startTransition] = useTransition();
   const [openQuestions, setOpenQuestions] = useState<Set<string>>(new Set());
+  const [detailsById, setDetailsById] = useState<Map<string, WorkspaceQuestion>>(new Map());
+  const [loadingQuestions, setLoadingQuestions] = useState<Set<string>>(new Set());
+  const [questionErrors, setQuestionErrors] = useState<Map<string, string>>(new Map());
   const [openSummaries, setOpenSummaries] = useState<Set<string>>(new Set());
   const [loadingAnswer, setLoadingAnswer] = useState<string | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
-  const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const activeTopicRef = useRef<HTMLButtonElement | null>(null);
 
   const groupNodes = useMemo(
     () => syllabusNodes.filter((node) => node.kind === "group"),
@@ -58,10 +54,66 @@ export function SubjectWorkspace({
     () => syllabusNodes.filter((node) => node.kind === "topic"),
     [syllabusNodes],
   );
-  const topicCounts = useMemo(
-    () => questions.reduce((sum, question) => sum + question.linkedInsights.length, 0),
+  const topperCount = useMemo(
+    () => questions.reduce((sum, question) => sum + question.topperCount, 0),
     [questions],
   );
+  const activeGroupId = useMemo(() => {
+    if (!selectedSyllabusId) return null;
+    return topicNodes.find((node) => node.id === selectedSyllabusId)?.parentId ?? null;
+  }, [selectedSyllabusId, topicNodes]);
+
+  useEffect(() => {
+    activeTopicRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedSyllabusId]);
+
+  const redirectToSignIn = useCallback(() => {
+    const next = typeof window !== "undefined"
+      ? `${window.location.pathname}${window.location.search}`
+      : baseHref;
+    router.push(`/account?next=${encodeURIComponent(next)}`);
+  }, [baseHref, router]);
+
+  const ensureQuestionDetail = useCallback(async (questionId: string) => {
+    if (detailsById.has(questionId)) return;
+    setLoadingQuestions((current) => new Set(current).add(questionId));
+    setQuestionErrors((current) => {
+      const next = new Map(current);
+      next.delete(questionId);
+      return next;
+    });
+
+    try {
+      const response = await fetch(`/api/workspace-questions/${encodeURIComponent(questionId)}`, {
+        cache: "no-store",
+      });
+      if (response.status === 401) {
+        redirectToSignIn();
+        return;
+      }
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || "Question details could not be loaded.");
+      }
+      setDetailsById((current) => {
+        const next = new Map(current);
+        next.set(questionId, payload as WorkspaceQuestion);
+        return next;
+      });
+    } catch (error) {
+      setQuestionErrors((current) => {
+        const next = new Map(current);
+        next.set(questionId, error instanceof Error ? error.message : "Question details could not be loaded.");
+        return next;
+      });
+    } finally {
+      setLoadingQuestions((current) => {
+        const next = new Set(current);
+        next.delete(questionId);
+        return next;
+      });
+    }
+  }, [detailsById, redirectToSignIn]);
 
   function toggleSet(current: Set<string>, id: string) {
     const next = new Set(current);
@@ -79,343 +131,317 @@ export function SubjectWorkspace({
   }
 
   function navigateTo(nextQuery: string, nextSyllabusId: string) {
-    const href = buildHref(nextQuery, nextSyllabusId);
-    startTransition(() => router.push(href));
+    startTransition(() => router.push(buildHref(nextQuery, nextSyllabusId), { scroll: false }));
   }
 
-  function handleBack() {
-    if (window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push("/");
-  }
-
-  async function openPdf(answerId: string, titleText: string) {
+  async function openPdf(answerId: string) {
     setLoadingAnswer(answerId);
     setViewerError(null);
+    const tab = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    if (tab) tab.opener = null;
     try {
       const response = await fetch("/api/answer-source", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answerId }),
       });
+      if (response.status === 401) {
+        if (tab) tab.close();
+        redirectToSignIn();
+        return;
+      }
       const payload = await response.json();
-      if (!response.ok || !payload?.embedUrl) {
+      const viewerUrl = payload?.viewerUrl || payload?.embedUrl;
+      if (!response.ok || !viewerUrl) {
         throw new Error(payload?.error || "PDF could not be opened.");
       }
-      setViewer({
-        src: payload.embedUrl,
-        title: titleText,
-        page: payload.page || 1,
-        pageStatus: payload.pageStatus || null,
-      });
+      if (tab) {
+        tab.location.href = viewerUrl;
+      } else {
+        window.open(viewerUrl, "_blank", "noopener,noreferrer");
+      }
       trackActivity(2);
     } catch (error) {
+      if (tab) tab.close();
       setViewerError(error instanceof Error ? error.message : "PDF could not be opened.");
     } finally {
       setLoadingAnswer(null);
     }
   }
 
+  const activeSyllabusLabel = selectedSyllabusId
+    ? topicNodes.find((node) => node.id === selectedSyllabusId)?.label
+    : null;
+
   return (
     <main className="library-page min-h-screen">
-      <section className="mx-auto max-w-7xl px-5 py-5 sm:px-8 lg:px-10">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-terminal pb-5">
-          <button type="button" className="quiet-link inline-flex items-center gap-2 text-sm font-semibold" onClick={handleBack}>
-            <ArrowLeft size={16} aria-hidden="true" />
-            Back
-          </button>
-          <nav className="flex flex-wrap items-center gap-2" aria-label="Subjects">
-            {getSubjectDefinitions().map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={item.key === subjectKey ? "btn-primary" : "btn-secondary"}
-              >
-                {item.shortLabel}
-              </Link>
-            ))}
-            <Link href="/browse" className="btn-secondary">
-              <Search size={15} aria-hidden="true" />
-              Search all
-            </Link>
-            <ThemeSwitcher compact />
-            <AuthControls compact />
-          </nav>
-        </header>
+      <StudyNav />
+      {isPending && <div className="route-progress" aria-hidden="true" />}
 
-        <section className="grid gap-8 py-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
-          <div>
+      <section className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="min-w-0">
             <div className="overline mb-3">Subject workspace</div>
-            <h1 className="text-4xl font-semibold leading-tight sm:text-6xl">{title}</h1>
-            <p className="mt-4 max-w-3xl text-base leading-8 text-secondary">{description}</p>
+            <h1 className="text-3xl leading-tight tracking-[-0.02em] sm:text-4xl">{title}</h1>
+            <p className="mt-3 max-w-3xl text-base leading-8 text-secondary">{description}</p>
+            <p className="mt-3 text-sm text-muted">
+              <span className="mono-stat text-secondary">{questions.length.toLocaleString()}</span> questions
+              {" · "}
+              <span className="mono-stat text-secondary">{topperCount.toLocaleString()}</span> topper copies
+              {activeSyllabusLabel ? <> · filtered to {activeSyllabusLabel}</> : null}
+            </p>
           </div>
-          <SubjectProgress questionIds={questions.map((question) => question.id)} />
-        </section>
+          <div className="w-full max-w-xs">
+            <SubjectProgress questionIds={progressQuestionIds || questions.map((question) => makeProgressItemId("pyq", question.id))} label="Overall progress" />
+          </div>
+        </div>
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Visible PYQs" value={questions.length.toLocaleString()} />
-          <Metric label="Topper copies" value={topicCounts.toLocaleString()} />
-          <Metric label="Selected node" value={selectedSyllabusId ? "1" : "All"} />
-          <Metric label="Mode" value="Syllabus first" />
-        </section>
-
-        <section className="mt-6 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="soft-panel h-fit p-4 lg:sticky lg:top-4">
-            <div className="overline mb-3">Syllabus</div>
+        <div className="mt-8 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="soft-panel flex flex-col p-4 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-6rem)]">
+            <div className="overline mb-3 shrink-0">Syllabus</div>
             <button
               type="button"
-              className={selectedSyllabusId ? "quiet-link text-sm" : "btn-primary w-full justify-start"}
+              className={selectedSyllabusId ? "nav-pill shrink-0" : "btn-primary w-full shrink-0 justify-start"}
+              data-active={!selectedSyllabusId}
               onClick={() => navigateTo(query, "")}
             >
-              All syllabus nodes
+              All topics
             </button>
 
-            <div className="mt-4 grid gap-4">
+            <div className="nav-scroll mt-4 grid gap-4 overflow-y-auto pr-1">
               {groupNodes.map((group) => {
                 const children = topicNodes.filter((node) => node.parentId === group.id);
                 if (!children.length) return null;
 
                 return (
                   <section key={group.id} className="grid gap-1">
-                    <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">
+                    <div
+                      className="text-xs font-semibold uppercase tracking-[0.08em] transition-colors"
+                      style={{ color: activeGroupId === group.id ? "var(--accent)" : "var(--fg-muted)" }}
+                    >
                       {group.label}
                     </div>
-                    {children.map((node) => (
-                      <button
-                        key={node.id}
-                        type="button"
-                        className={
-                          selectedSyllabusId === node.id
-                            ? "soft-button w-full justify-between text-left"
-                            : "flex w-full items-start justify-between rounded-2xl border border-terminal px-3 py-2 text-left text-sm text-secondary transition hover:border-[var(--accent)] hover:text-primary"
-                        }
-                        data-variant={selectedSyllabusId === node.id ? "primary" : "secondary"}
-                        onClick={() => navigateTo(query, node.id)}
-                      >
-                        <span className="pr-3 leading-6">{node.label}</span>
-                        <span className="mono-stat text-xs text-muted">{node.questionCount}</span>
-                      </button>
-                    ))}
+                    {children.map((node) => {
+                      const active = selectedSyllabusId === node.id;
+                      return (
+                        <button
+                          key={node.id}
+                          ref={active ? activeTopicRef : undefined}
+                          type="button"
+                          className="topic-row"
+                          data-active={active}
+                          onClick={() => navigateTo(query, node.id)}
+                        >
+                          <span className="leading-6">{node.label}</span>
+                          <span className="mono-stat text-xs text-muted">{node.questionCount}</span>
+                        </button>
+                      );
+                    })}
                   </section>
                 );
               })}
             </div>
           </aside>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
-            <div className="min-w-0">
-              <form
-                className="soft-panel p-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const form = new FormData(event.currentTarget);
-                  navigateTo(String(form.get("q") || ""), selectedSyllabusId);
-                }}
-              >
-                <div className="relative">
-                  <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
-                  <input
-                    name="q"
-                    defaultValue={query}
-                    placeholder={`Search inside ${title}`}
-                    className="soft-input h-12 w-full pl-11 pr-4 text-sm"
-                  />
-                </div>
-                {(selectedSyllabusId || query.trim()) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-secondary">
-                    {query.trim() && <span className="study-badge">Search: {query.trim()}</span>}
-                    {selectedSyllabusId && (
-                      <span className="study-badge study-badge-accent">
-                        {topicNodes.find((node) => node.id === selectedSyllabusId)?.label || "Selected syllabus"}
-                      </span>
-                    )}
-                    <button type="button" className="quiet-link text-xs font-semibold" onClick={() => navigateTo("", "")}>
-                      Clear filters
-                    </button>
-                  </div>
-                )}
-              </form>
-
-              {viewerError && (
-                <div className="mt-4 soft-panel-muted p-4 text-sm text-secondary">
-                  {viewerError}
+          <div className="min-w-0">
+            <form
+              className="soft-panel p-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                navigateTo(String(form.get("q") || ""), selectedSyllabusId);
+              }}
+            >
+              <div className="relative">
+                <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
+                <input
+                  name="q"
+                  defaultValue={query}
+                  placeholder={`Search inside ${title}`}
+                  className="soft-input h-12 w-full pl-11 pr-4 text-sm"
+                />
+              </div>
+              {(selectedSyllabusId || query.trim()) && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 px-1 text-sm text-secondary">
+                  {query.trim() && <span className="study-badge">Search: {query.trim()}</span>}
+                  {activeSyllabusLabel && <span className="study-badge study-badge-accent">{activeSyllabusLabel}</span>}
+                  <button type="button" className="quiet-link px-2 text-xs font-semibold" onClick={() => navigateTo("", "")}>Clear</button>
                 </div>
               )}
+              <p className="workspace-disclaimer mt-3 px-1 text-xs text-muted">
+                {authAvailable && !isAuthenticated
+                  ? "PYQs stay public. Sign in to open topper copies, summaries, and PDFs."
+                  : "Matches and summaries are OCR/AI-assisted study aids. Verify with the original PYQ and the source PDF."}
+              </p>
+            </form>
 
-              <section className="mt-6 grid gap-5">
-                {questions.map((question, index) => {
-                  const isOpen = openQuestions.has(question.id);
-                  return (
-                    <article key={question.id} className="pyq-card overflow-hidden">
-                      <div className="grid gap-4 p-4 sm:grid-cols-[48px_minmax(0,1fr)_auto] sm:p-5">
-                        <div className="mono-stat hidden h-11 w-11 place-items-center rounded-full bg-[var(--accent-soft)] text-xs text-accent sm:grid">
-                          {String(index + 1).padStart(2, "0")}
-                        </div>
+            {viewerError && (
+              <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary">{viewerError}</div>
+            )}
 
-                        <div className="min-w-0">
-                          <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <span className="study-badge">{question.paper}</span>
-                            {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
-                            {question.marks && <span className="study-badge">{question.marks} marks</span>}
-                            <span className="study-badge study-badge-accent">
-                              {question.linkedInsights.length} {question.linkedInsights.length === 1 ? "copy" : "copies"}
-                            </span>
-                          </div>
-                          <h2 className="question-title text-lg font-semibold leading-8 sm:text-xl">
-                            {question.question}
-                          </h2>
-                          {question.syllabusPath[1] && (
-                            <p className="mt-3 text-sm leading-7 text-secondary">{question.syllabusPath[1]}</p>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col items-start gap-2 sm:items-end">
-                          <ProgressToggle questionId={question.id} />
-                          <button
-                            type="button"
-                            className="btn-primary"
-                            onClick={() => {
-                              setOpenQuestions((current) => toggleSet(current, question.id));
-                              trackActivity();
-                            }}
-                          >
-                            {isOpen ? "Hide copies" : "Topper copies"}
-                          </button>
-                        </div>
+            <div className={`mt-5 grid gap-4${isPending ? " is-pending" : ""}`} aria-busy={isPending}>
+              {questions.map((question, index) => {
+                const isOpen = openQuestions.has(question.id);
+                const isLoading = loadingQuestions.has(question.id);
+                const detail = detailsById.get(question.id) || question;
+                const questionError = questionErrors.get(question.id) || null;
+                return (
+                  <article key={question.id} className="pyq-card overflow-hidden" data-done={isProgressDone(progressMap, "pyq", question.id)}>
+                    <div className="grid gap-4 p-5 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:gap-5">
+                      <div className="mono-stat hidden h-9 w-9 place-items-center rounded-full bg-[var(--accent-soft)] text-xs text-accent sm:grid">
+                        {String(index + 1).padStart(2, "0")}
                       </div>
 
-                      {isOpen && (
-                        <div className="animate-fade-in border-t border-terminal p-4 sm:p-5">
-                          <div className="grid gap-3">
-                            {question.linkedInsights.length > 0 ? (
-                              question.linkedInsights.map((copy) => {
-                                const summaryOpen = openSummaries.has(copy.answerId);
-                                const topperLabel = displayPublicTopperName(copy.topperName);
-                                return (
-                                  <article key={copy.answerId} className="soft-panel p-4">
-                                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-                                      <div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                          <span className="font-semibold">{topperLabel}</span>
-                                          {copy.rank && <span className="study-badge">AIR {copy.rank}</span>}
-                                          {copy.year && <span className="study-badge">{copy.year}</span>}
-                                          {copy.institute && <span className="study-badge">{copy.institute}</span>}
-                                          {copy.marks && <span className="study-badge">{copy.marks}</span>}
-                                          {copy.pageHint && <span className="study-badge">Page {copy.pageHint}</span>}
-                                        </div>
-                                        <p className="mt-2 text-xs leading-6 text-muted">{question.question}</p>
-                                        {!copy.sourceAvailable && (
-                                          <p className="mt-2 text-xs text-muted">
-                                            {copy.sourceStatus === "not_uploaded"
-                                              ? "PDF not uploaded yet."
-                                              : copy.sourceStatus === "page_out_of_range"
-                                                ? "PDF page mapping needs correction."
-                                                : "PDF page not available yet."}
-                                          </p>
-                                        )}
-                                      </div>
+                      <div className="min-w-0">
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <span className="study-badge">{question.paper}</span>
+                          {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
+                          {question.marks && <span className="study-badge">{question.marks} marks</span>}
+                          <span className="study-badge study-badge-accent">
+                            {question.topperCount} {question.topperCount === 1 ? "copy" : "copies"}
+                          </span>
+                        </div>
+                        <h2 className="question-title text-lg leading-8 sm:text-xl">{question.question}</h2>
+                        {question.syllabusPath[1] && (
+                          <p className="mt-3 text-sm leading-7 text-secondary">{question.syllabusPath[1]}</p>
+                        )}
+                      </div>
 
-                                      <div className="flex flex-wrap gap-2 lg:justify-end">
-                                        {copy.summaryAvailable && (
-                                          <button
-                                            type="button"
-                                            className="btn-secondary"
-                                            onClick={() => {
-                                              setOpenSummaries((current) => toggleSet(current, copy.answerId));
-                                              trackActivity();
-                                            }}
-                                          >
-                                            <Sparkles size={15} aria-hidden="true" />
-                                            {summaryOpen ? "Hide summary" : "Show summary"}
-                                          </button>
-                                        )}
-                                        {copy.sourceAvailable ? (
-                                          <button
-                                            type="button"
-                                            className="btn-primary"
-                                            onClick={() => void openPdf(copy.answerId, `${topperLabel} · ${question.question}`)}
-                                            disabled={loadingAnswer === copy.answerId}
-                                          >
-                                            {loadingAnswer === copy.answerId ? (
-                                              <Loader2 size={15} className="animate-spin" aria-hidden="true" />
-                                            ) : (
-                                              <FileText size={15} aria-hidden="true" />
-                                            )}
-                                            View PDF
-                                          </button>
-                                        ) : (
-                                          <span className="study-badge">PDF unavailable</span>
-                                        )}
+                      <div className="flex flex-row items-center gap-2 sm:flex-col sm:items-end">
+                        <ProgressToggle itemId={makeProgressItemId("pyq", question.id)} />
+                        <button
+                          type="button"
+                          className={isOpen ? "btn-secondary" : "btn-primary"}
+                          onClick={() => {
+                            const opening = !isOpen;
+                            setOpenQuestions((current) => toggleSet(current, question.id));
+                            if (opening) {
+                              void ensureQuestionDetail(question.id);
+                            }
+                            trackActivity();
+                          }}
+                        >
+                          {isOpen ? "Hide copies" : "Topper copies"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {isOpen && (
+                      <div className="animate-fade-in border-t border-terminal p-5">
+                        {isLoading && !detailsById.has(question.id) && (
+                          <div className="soft-panel-muted flex items-center gap-3 p-4 text-sm text-secondary">
+                            <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                            Loading topper copies…
+                          </div>
+                        )}
+
+                        {questionError && !isLoading && (
+                          <div className="soft-panel-muted p-4 text-sm text-secondary">{questionError}</div>
+                        )}
+
+                        {!isLoading && !questionError && detail.linkedInsights.length > 0 && (
+                          <div className="grid gap-3">
+                            {detail.linkedInsights.map((copy) => {
+                              const summaryOpen = openSummaries.has(copy.answerId);
+                              const topperName = normalizePublicTopperName(copy.topperName) ?? "Topper copy";
+                              return (
+                                <article key={copy.answerId} className="soft-panel-muted copy-card p-4" data-done={isProgressDone(progressMap, "topper_copy", copy.answerId)}>
+                                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold">{topperName}</span>
+                                        {copy.rank && <span className="study-badge">AIR {copy.rank}</span>}
+                                        {copy.year && <span className="study-badge">{copy.year}</span>}
+                                        {copy.institute && <span className="study-badge">{copy.institute}</span>}
+                                        {copy.marks && <span className="study-badge">{copy.marks}</span>}
+                                        {copy.pageHint && <span className="study-badge">Page {copy.pageHint}</span>}
                                       </div>
+                                      {!copy.sourceAvailable && (
+                                        <p className="mt-2 text-xs text-muted">
+                                          {copy.sourceStatus === "not_uploaded"
+                                            ? "Source PDF not uploaded yet."
+                                            : copy.sourceStatus === "page_out_of_range"
+                                              ? "Source page mapping needs correction."
+                                              : "Source page not available yet."}
+                                        </p>
+                                      )}
                                     </div>
 
-                                    {summaryOpen && copy.summaryAvailable && (
+                                    <div className="flex flex-wrap gap-2 lg:justify-end">
+                                      <ProgressToggle itemId={makeProgressItemId("topper_copy", copy.answerId)} />
+                                      {copy.summaryAvailable && (
+                                        <button
+                                          type="button"
+                                          className="btn-secondary"
+                                          onClick={() => {
+                                            setOpenSummaries((current) => toggleSet(current, copy.answerId));
+                                            trackActivity();
+                                          }}
+                                        >
+                                          <Sparkles size={15} aria-hidden="true" />
+                                          {summaryOpen ? "Hide summary" : "Summary"}
+                                        </button>
+                                      )}
+                                      {copy.sourceAvailable ? (
+                                        <button
+                                          type="button"
+                                          className="btn-primary"
+                                          onClick={() => void openPdf(copy.answerId)}
+                                          disabled={loadingAnswer === copy.answerId}
+                                        >
+                                          {loadingAnswer === copy.answerId ? (
+                                            <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                                          ) : (
+                                            <ExternalLink size={15} aria-hidden="true" />
+                                          )}
+                                          View PDF
+                                        </button>
+                                      ) : (
+                                        <span className="study-badge">PDF unavailable</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {summaryOpen && copy.summaryAvailable && (
+                                    <>
                                       <div className="summary-box mt-4 p-4 text-sm leading-7 text-secondary">
                                         {copy.summary}
                                       </div>
-                                    )}
-                                  </article>
-                                );
-                              })
-                            ) : (
-                              <div className="soft-panel-muted p-4 text-sm leading-7 text-secondary">
-                                No topper copies are attached to this PYQ yet.
-                              </div>
-                            )}
+                                      <p className="mt-3 text-xs text-muted">
+                                        Summary is OCR/AI-assisted. Verify with the original PDF page before relying on it.
+                                      </p>
+                                    </>
+                                  )}
+                                </article>
+                              );
+                            })}
                           </div>
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </section>
+                        )}
 
-              {questions.length === 0 && (
-                <div className="py-20 text-center text-secondary">
-                  No PYQs matched this syllabus node and search query.
-                </div>
-              )}
+                        {!isLoading && !questionError && detail.linkedInsights.length === 0 && (
+                          <div className="soft-panel-muted p-4 text-sm leading-7 text-secondary">
+                            No topper copies are attached to this question yet.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
 
-            <aside className="soft-panel overflow-hidden p-0 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
-              {viewer ? (
-                <div className="flex min-h-[520px] flex-col">
-                  <div className="border-b border-terminal px-4 py-3 text-xs text-secondary">
-                    Inline PDF viewer
-                  </div>
-                  <div className="min-h-0 flex-1">
-                    <PdfViewer
-                      src={viewer.src}
-                      initialPage={viewer.page}
-                      title={viewer.title}
-                      pageStatus={viewer.pageStatus}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="flex min-h-[520px] flex-col items-center justify-center gap-3 px-6 py-8 text-center">
-                  <FileText size={28} className="text-muted" aria-hidden="true" />
-                  <div className="text-sm font-semibold text-primary">Select a topper copy PDF</div>
-                  <p className="max-w-xs text-sm leading-6 text-secondary">
-                    Choose any available `View PDF` action on the left to open the mapped page here with pdf.js.
-                  </p>
-                </div>
-              )}
-            </aside>
+            {questions.length === 0 && (
+              <div className="soft-panel-muted mt-5 px-6 py-20 text-center text-secondary">
+                No questions matched this topic and search.
+              </div>
+            )}
           </div>
-        </section>
+        </div>
       </section>
     </main>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="soft-panel p-4">
-      <div className="overline">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-accent">{value}</div>
-    </div>
-  );
+function isProgressDone(progressMap: Record<string, { done?: boolean }>, type: ProgressItemType, id: string) {
+  return progressItemCandidates(type, id).some((candidate) => Boolean(progressMap[candidate]?.done));
 }

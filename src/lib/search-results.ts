@@ -3,6 +3,7 @@ import type { SearchAnswerCard } from "./search-api";
 
 export interface SubjectPyqCard {
   id: string;
+  subjectKey?: string;
   question: string;
   paper: string;
   category: string;
@@ -100,6 +101,7 @@ export function groupAnswerCards(docs: SearchAnswerCard[], limit = 240, fallback
 
     grouped.set(doc.questionId, {
       id: doc.questionId,
+      subjectKey: doc.subjectKey,
       question: doc.question,
       paper: doc.paper,
       category: doc.category || doc.subjectLabel || fallbackCategory,

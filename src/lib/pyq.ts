@@ -8,13 +8,13 @@ import {
   getWorkspaceNode,
   getWorkspaceQuestionById,
   getSubjectWorkspaceQuestions,
-  getWorkspaceStats,
   getWorkspaceSyllabusNodes,
   searchWorkspaceQuestions,
   type WorkspaceQuestion,
   type WorkspaceSyllabusNode,
 } from "./question-bank";
 import { searchAnswerCards } from "./db-search";
+import { getOfficialPyqStats } from "./official-pyqs";
 import { cleanPublicText, isPublishableQuestionText, normalizePublicTopperName } from "./public-records";
 import type { SearchAnswerCard } from "./search-api";
 
@@ -58,6 +58,16 @@ export async function getSubjectPyqs(
   return getSubjectWorkspaceQuestions(subjectKey, query, syllabusNodeId).slice(0, limit);
 }
 
+export async function getSubjectPyqShells(
+  subjectKey: SubjectKey,
+  query = "",
+  limit = 120,
+  syllabusNodeId = "",
+): Promise<WorkspaceQuestion[]> {
+  const questions = await getSubjectPyqs(subjectKey, query, limit, syllabusNodeId);
+  return questions.map(toQuestionShell);
+}
+
 export async function getSubjectSyllabusNodes(subjectKey: SubjectKey): Promise<WorkspaceSyllabusNode[]> {
   return getWorkspaceSyllabusNodes(subjectKey);
 }
@@ -91,7 +101,12 @@ export async function getFeaturedSubjectQuestion(subjectKey: SubjectKey) {
 }
 
 export async function getBrowseStats() {
-  return getWorkspaceStats();
+  const official = getOfficialPyqStats();
+  return {
+    totalQuestions: official.totalQuestions,
+    answerLinks: official.linkedCopies,
+    categoryCounts: new Map<string, number>(official.categories.map((row) => [row.name, row.count])),
+  };
 }
 
 export function getSubjectPageMeta(subjectKey: SubjectKey) {
@@ -113,8 +128,21 @@ export async function searchHybridWorkspaceQuestions(options: {
     syllabus: syllabusLabel || undefined,
     limit: options.limit,
   });
+  const semantic = toWorkspaceQuestions(response.results, Math.max(options.limit * 2, options.limit));
+  const lexicalFallback = searchWorkspaceQuestions({
+    query: options.query,
+    subjectKey: options.subjectKey || "",
+    syllabusNodeId: options.syllabusNodeId || "",
+    limit: Math.max(options.limit * 2, options.limit),
+  });
 
-  return toWorkspaceQuestions(response.results, options.limit);
+  const merged = new Map<string, WorkspaceQuestion>();
+  for (const question of semantic) merged.set(question.id, question);
+  for (const question of lexicalFallback) {
+    if (!merged.has(question.id)) merged.set(question.id, question);
+  }
+
+  return [...merged.values()].slice(0, options.limit);
 }
 
 function toWorkspaceQuestions(docs: SearchAnswerCard[], limit: number) {
@@ -173,4 +201,11 @@ function extractMarks(question: string) {
   const match = String(question || "").match(/\b(10|15|20|25|125|250)\s*marks?\b/i)
     || String(question || "").match(/\((10|15|20|25)\s*m/i);
   return match ? Number(match[1]) : null;
+}
+
+function toQuestionShell(question: WorkspaceQuestion): WorkspaceQuestion {
+  return {
+    ...question,
+    linkedInsights: [],
+  };
 }

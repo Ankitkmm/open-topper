@@ -96,7 +96,7 @@ async function getExtractor() {
     const { pipeline, env } = await import("@xenova/transformers");
     env.allowLocalModels = false;
     env.useBrowserCache = true;
-    return await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2", {
+    return await pipeline("feature-extraction", "Xenova/paraphrase-MiniLM-L3-v2", {
       quantized: true,
       progress_callback: undefined,
     }) as unknown as Extractor;

@@ -1,7 +1,7 @@
 import type { PoolClient, QueryResultRow } from "pg";
 import { hasDatabaseUrl, parsePositiveInteger } from "./env";
 import { queryDb } from "./db";
-import { embedText, toVectorLiteral } from "./embeddings";
+import { embedText, hasEmbeddingApi, toVectorLiteral } from "./embeddings";
 import { isPublishableQuestionText, normalizePublicTopperName } from "./public-records";
 import {
   getAnswerRecord,
@@ -54,11 +54,11 @@ type SyllabusDbRow = QueryResultRow & {
 export async function searchAnswerCards(params: SearchQueryParams) {
   if (!hasDatabaseUrl()) return searchDocuments(params);
 
-  const limit = clamp(parsePositiveInteger(String(params.limit ?? 24), 24), 1, 60);
+  const limit = clamp(parsePositiveInteger(String(params.limit ?? 24), 24), 1, 240);
   const offset = params.cursor ? Math.max(0, Number.parseInt(params.cursor, 10) || 0) : 0;
   const queryText = params.q?.trim() || "";
   const hasQuery = Boolean(queryText);
-  const queryEmbedding = hasQuery ? await embedText(queryText).catch(() => null) : null;
+  const queryEmbedding = hasQuery && hasEmbeddingApi() ? await embedText(queryText).catch(() => null) : null;
   const vectorLiteral = queryEmbedding ? toVectorLiteral(queryEmbedding) : null;
   const filterValues: unknown[] = [];
   const bindFilter = (value: unknown) => {
@@ -73,16 +73,6 @@ export async function searchAnswerCards(params: SearchQueryParams) {
   if (params.topper) where.push(`lower(a.topper_name) like ${bindFilter(`%${String(params.topper).toLowerCase()}%`)}`);
   if (params.syllabus) where.push(`exists (select 1 from unnest(a.syllabus_path) as tag where lower(tag) like ${bindFilter(`%${String(params.syllabus).toLowerCase()}%`)})`);
   if (params.topic) where.push(`exists (select 1 from unnest(a.topic_tags) as tag where lower(tag) like ${bindFilter(`%${String(params.topic).toLowerCase()}%`)})`);
-
-  const totalResult = await queryDb<{ count: string }>(
-    `select count(*)::text as count
-     from search_documents sd
-     join answers a on a.answer_id = sd.answer_id
-     join questions q on q.question_id = sd.question_id
-     where ${where.join(" and ")}`,
-    filterValues,
-  );
-  const total = Number(totalResult.rows[0]?.count || 0);
 
   const selectColumns = `
     sd.answer_id,
@@ -143,7 +133,7 @@ export async function searchAnswerCards(params: SearchQueryParams) {
       clause.replace(/\$(\d+)/g, (_match, index) => `$${Number(index) + filterOffset}`),
     );
     const lexicalLimitPlaceholder = `$${values.push(lexicalLimit)}`;
-    const vectorLimitPlaceholder = `$${values.push(vectorLimit)}`;
+    const vectorLimitPlaceholder = vectorLiteral ? `$${values.push(vectorLimit)}` : "";
     const offsetPlaceholder = `$${values.push(offset)}`;
     const limitPlaceholder = `$${values.push(limit)}`;
     const lexicalOrder = "ts_rank_cd(sd.search_tsv, plainto_tsquery('english', $1::text)) desc, sd.primary_match_elo desc, sd.answer_id asc";
@@ -204,7 +194,8 @@ export async function searchAnswerCards(params: SearchQueryParams) {
       values,
     );
   }
-  const nextCursor = offset + limit < total ? String(offset + limit) : null;
+  const nextCursor = result.rows.length === limit ? String(offset + limit) : null;
+  const total = nextCursor ? offset + limit + 1 : offset + result.rows.length;
 
   return {
     total,

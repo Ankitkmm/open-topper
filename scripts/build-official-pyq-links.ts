@@ -47,8 +47,42 @@ const ANCHOR_NOISE = new Set([
   "issue", "measure", "role", "public", "government", "decade", "recent", "current", "context",
 ]);
 
+const ESSAY_FALLBACK_NOISE = new Set([
+  "one", "two", "three", "best", "more", "less", "there", "life", "man", "human", "you", "your",
+  "good", "true", "cost", "all", "who", "having", "other", "without", "with", "being", "after",
+  "before", "first", "second", "third", "always", "never", "nothing", "wrong", "mean", "means",
+  "itself", "much", "see", "very", "make", "made", "way", "ways", "thing", "things",
+]);
+
+const ESSAY_METADATA_TOKENS = new Set([
+  "cse", "pyq", "essay", "upsc", "official", "section",
+]);
+
+const ESSAY_PROMPT_BLOCKLIST = [
+  /^you are\b/i,
+  /^consider\b/i,
+  /^country\s+[a-z]\b/i,
+  /^there has been\b/i,
+  /^what do you understand\b/i,
+  /^list any two\b/i,
+  /^above two\b/i,
+  /^given these\b/i,
+  /^now coming\b/i,
+  /^having seen\b/i,
+  /^how can we use\b/i,
+  /^[ab]\)\s*/i,
+  /^q-\d/i,
+];
+
 const TOKEN_CACHE = new Map<string, string[]>();
 const CARD_SEMANTIC_CACHE = new Map<string, Set<string>>();
+const ESSAY_TOKEN_CACHE = new Map<string, string[]>();
+const ESSAY_THEME_TOKEN_CACHE = new Map<string, string[]>();
+const ESSAY_CORE_TOKEN_CACHE = new Map<string, string[]>();
+
+const ESSAY_PROMPT_MARKER = /\bQ\.?\s*\d{1,2}[A-Za-z]?\b|(?<![A-Za-z0-9])\d{1,2}\s*[.)\]:-]/gi;
+
+type MatchType = AcceptedAnswerLink["matchType"];
 
 interface PyqCard {
   id: string;
@@ -116,6 +150,34 @@ interface Score {
   matchFloor: number;
 }
 
+interface EssayPromptEntry {
+  card: PyqCard;
+  prompt: string;
+  normalizedPrompt: string;
+  promptTokens: string[];
+  coreTokens: string[];
+  cardThemeTokens: string[];
+  promptLike: boolean;
+}
+
+interface EssayScore {
+  confidence: number;
+  promptCoverage: number;
+  promptJaccard: number;
+  themeCoverage: number;
+  sharedPromptTokens: string[];
+  sharedThemeTokens: string[];
+  matchFloor: number;
+}
+
+interface CandidateMatch {
+  card: PyqCard;
+  matchType: MatchType;
+  confidence: number;
+  reason: string;
+  score?: Score | EssayScore;
+}
+
 interface AcceptedAnswerLink {
   officialQuestionId: string;
   topperAnswerId: string;
@@ -155,12 +217,18 @@ interface AcceptedAnswerLink {
 
 function main() {
   const officialRows = loadOfficialRows();
-  const cards = uniqueCards(loadPyqCards()).filter((card) => card.linkedInsights.length > 0 && isUsableExtractedQuestion(card.question));
+  const availableCards = uniqueCards(loadPyqCards()).filter((card) => card.linkedInsights.length > 0);
+  const cards = availableCards.filter((card) => isUsableExtractedQuestion(card.question));
+  const essayCards = availableCards.filter(isEssayCard);
   const answers = loadTopperAnswers();
   const answersByCard = groupAnswersByCard(answers);
   const idf = buildIdf([...officialRows.map((row) => row.question), ...cards.map((card) => card.question)]);
   const exactIndex = buildExactIndex(cards);
   const tokenIndex = buildTokenIndex(cards);
+  const essayPromptEntries = buildEssayPromptEntries(essayCards);
+  const essayExactIndex = buildEssayExactIndex(essayPromptEntries);
+  const essaySignatureIndex = buildEssaySignatureIndex(essayPromptEntries);
+  const candidateCardCount = new Set([...cards.map((card) => card.id), ...essayCards.map((card) => card.id)]).size;
 
   const links: Record<string, AcceptedAnswerLink[]> = {};
   const ambiguousOfficialMatches = [];
@@ -170,60 +238,72 @@ function main() {
   let looseTopicMatchQuestionCount = 0;
 
   for (const row of officialRows) {
+    let acceptedCards: CandidateMatch[] = [];
+    let reviewCandidates: Array<{
+      cardId: string;
+      extractedQuestion: string;
+      category: string;
+      paper: string;
+      confidence: number;
+      reason: string;
+      linkedCopies: number;
+    }> = [];
+
     if (isEssayRow(row)) {
-      continue;
+      const essayMatches = matchEssayOfficialRow(row, essayPromptEntries, essayExactIndex, essaySignatureIndex, answersByCard);
+      acceptedCards = essayMatches.acceptedCards;
+      reviewCandidates = essayMatches.reviewCandidates;
+    } else {
+      const exactCards = exactIndex.get(normalizeQuestion(row.question)) || [];
+
+      if (exactCards.length > 0) {
+        acceptedCards = exactCards.map((card) => ({
+          card,
+          matchType: "direct",
+          confidence: 1,
+          reason: "Normalized official PYQ text exactly matches the extracted topper-answer card.",
+        }));
+      } else {
+        const scored = scoreCandidates(row, cards, tokenIndex, idf);
+        acceptedCards = scored
+          .map(({ card, score }) => ({ card, score, matchType: classifyScore(score) }))
+          .filter((match): match is { card: PyqCard; score: Score; matchType: MatchType } => Boolean(match.matchType))
+          .slice(0, THRESHOLD.maxCardsPerOfficial)
+          .map(({ card, score, matchType }) => ({
+            card,
+            matchType,
+            confidence: round(Math.max(score.confidence, score.matchFloor)),
+            reason: explainScore(score),
+            score,
+          }));
+
+        reviewCandidates = scored
+          .filter(({ score }) => score.matchFloor >= THRESHOLD.review || score.confidence >= THRESHOLD.review)
+          .slice(0, 6)
+          .map(({ card, score }) => ({
+            cardId: card.id,
+            extractedQuestion: card.question,
+            category: card.category,
+            paper: card.paper,
+            confidence: round(score.confidence),
+            reason: explainScore(score),
+            linkedCopies: answersByCard.get(card.id)?.length || 0,
+          }));
+      }
     }
 
-    const exactCards = exactIndex.get(normalizeQuestion(row.question)) || [];
-    let acceptedCards: { card: PyqCard; matchType: AcceptedAnswerLink["matchType"]; confidence: number; reason: string; score?: Score }[] = [];
+    if (acceptedCards.some((match) => match.matchType === "direct")) exactQuestionCount += 1;
+    if (acceptedCards.some((match) => match.matchType === "strong")) strongQuestionCount += 1;
+    if (acceptedCards.some((match) => match.matchType === "topic-match")) topicMatchQuestionCount += 1;
+    if (acceptedCards.some((match) => match.matchType === "loose-topic-match")) looseTopicMatchQuestionCount += 1;
 
-    if (exactCards.length > 0) {
-      exactQuestionCount += 1;
-      acceptedCards = exactCards.map((card) => ({
-        card,
-        matchType: "direct",
-        confidence: 1,
-        reason: "Normalized official PYQ text exactly matches the extracted topper-answer card.",
-      }));
-    } else {
-      const scored = scoreCandidates(row, cards, tokenIndex, idf);
-      acceptedCards = scored
-        .map(({ card, score }) => ({ card, score, matchType: classifyScore(score) }))
-        .filter((match): match is { card: PyqCard; score: Score; matchType: AcceptedAnswerLink["matchType"] } => Boolean(match.matchType))
-        .slice(0, THRESHOLD.maxCardsPerOfficial)
-        .map(({ card, score, matchType }) => ({
-          card,
-          matchType,
-          confidence: round(Math.max(score.confidence, score.matchFloor)),
-          reason: explainScore(score),
-          score,
-        }));
-
-      if (acceptedCards.some((match) => match.matchType === "strong")) strongQuestionCount += 1;
-      if (acceptedCards.some((match) => match.matchType === "topic-match")) topicMatchQuestionCount += 1;
-      if (acceptedCards.some((match) => match.matchType === "loose-topic-match")) looseTopicMatchQuestionCount += 1;
-
-      const reviewCandidates = scored
-        .filter(({ score }) => score.matchFloor >= THRESHOLD.review || score.confidence >= THRESHOLD.review)
-        .slice(0, 6)
-        .map(({ card, score }) => ({
-          cardId: card.id,
-          extractedQuestion: card.question,
-          category: card.category,
-          paper: card.paper,
-          confidence: round(score.confidence),
-          reason: explainScore(score),
-          linkedCopies: answersByCard.get(card.id)?.length || 0,
-        }));
-
-      if (reviewCandidates.length > 0 && acceptedCards.length === 0) {
-        ambiguousOfficialMatches.push({
-          officialQuestionId: row.id,
-          officialQuestion: row.question,
-          subject: row.subjectKey,
-          candidates: reviewCandidates,
-        });
-      }
+    if (reviewCandidates.length > 0 && acceptedCards.length === 0) {
+      ambiguousOfficialMatches.push({
+        officialQuestionId: row.id,
+        officialQuestion: row.question,
+        subject: row.subjectKey,
+        candidates: reviewCandidates,
+      });
     }
 
     const acceptedAnswers = acceptedCards.flatMap((match) => {
@@ -241,7 +321,7 @@ function main() {
     generatedAt: new Date().toISOString(),
     thresholds: THRESHOLD,
     officialQuestionCount: officialRows.length,
-    candidateCardCount: cards.length,
+    candidateCardCount,
     topperAnswerCount: answers.length,
     linkedQuestionCount: Object.keys(links).length,
     exactQuestionCount,
@@ -371,6 +451,199 @@ function buildTokenIndex(cards: PyqCard[]) {
     }
   });
   return tokenIndex;
+}
+
+function buildEssayPromptEntries(cards: PyqCard[]) {
+  const entries: EssayPromptEntry[] = [];
+
+  for (const card of cards) {
+    const cardThemeTokens = essayThemeTokens([card.question, ...card.syllabusTags, ...card.keywords].join(" "));
+    const seen = new Set<string>();
+
+    for (const prompt of extractEssayPrompts(card.question)) {
+      const promptTokens = essayTokens(prompt);
+      const coreTokens = essayCoreTokens(prompt);
+      const normalizedPrompt = normalizeQuestion(prompt);
+      if (!normalizedPrompt || coreTokens.length === 0) continue;
+
+      const signature = essayTokenSignature(coreTokens);
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+
+      entries.push({
+        card,
+        prompt,
+        normalizedPrompt,
+        promptTokens,
+        coreTokens,
+        cardThemeTokens,
+        promptLike: isEssayPromptLike(prompt, promptTokens),
+      });
+    }
+  }
+
+  return entries;
+}
+
+function buildEssayExactIndex(entries: EssayPromptEntry[]) {
+  const index = new Map<string, EssayPromptEntry[]>();
+  for (const entry of entries) {
+    const bucket = index.get(entry.normalizedPrompt) || [];
+    bucket.push(entry);
+    index.set(entry.normalizedPrompt, bucket);
+  }
+  return index;
+}
+
+function buildEssaySignatureIndex(entries: EssayPromptEntry[]) {
+  const index = new Map<string, EssayPromptEntry[]>();
+  for (const entry of entries) {
+    const signature = essayTokenSignature(entry.coreTokens);
+    if (!signature || entry.coreTokens.length < 2) continue;
+    const bucket = index.get(signature) || [];
+    bucket.push(entry);
+    index.set(signature, bucket);
+  }
+  return index;
+}
+
+function matchEssayOfficialRow(
+  row: ReturnType<typeof loadOfficialRows>[number],
+  entries: EssayPromptEntry[],
+  exactIndex: Map<string, EssayPromptEntry[]>,
+  signatureIndex: Map<string, EssayPromptEntry[]>,
+  answersByCard: Map<string, TopperAnswerRecord[]>,
+) {
+  const exactEntries = exactIndex.get(normalizeQuestion(row.question)) || [];
+  if (exactEntries.length > 0) {
+    return {
+      acceptedCards: collapseEssayEntries(exactEntries).map((card) => ({
+        card,
+        matchType: "direct" as const,
+        confidence: 1,
+        reason: "Normalized official essay prompt exactly matches the extracted topper-answer prompt.",
+      })),
+      reviewCandidates: [],
+    };
+  }
+
+  const signature = essayTokenSignature(essayCoreTokens(row.question));
+  const signatureEntries = signature ? (signatureIndex.get(signature) || []) : [];
+  if (signatureEntries.length > 0) {
+    return {
+      acceptedCards: collapseEssayEntries(signatureEntries).map((card) => ({
+        card,
+        matchType: "direct" as const,
+        confidence: 0.98,
+        reason: "Essay prompt tokens match after normalization and metadata cleanup.",
+      })),
+      reviewCandidates: [],
+    };
+  }
+
+  const scored = scoreEssayCandidates(row, entries);
+  const acceptedCards = scored
+    .map(({ entry, score }) => ({ card: entry.card, score, matchType: classifyEssayScore(score) }))
+    .filter((match): match is { card: PyqCard; score: EssayScore; matchType: MatchType } => Boolean(match.matchType))
+    .slice(0, THRESHOLD.maxCardsPerOfficial)
+    .map(({ card, score, matchType }) => ({
+      card,
+      matchType,
+      confidence: round(Math.max(score.confidence, score.matchFloor)),
+      reason: explainEssayScore(score),
+      score,
+    }));
+
+  const reviewCandidates = scored
+    .filter(({ score }) => score.matchFloor >= THRESHOLD.review || score.confidence >= THRESHOLD.review)
+    .slice(0, 6)
+    .map(({ entry, score }) => ({
+      cardId: entry.card.id,
+      extractedQuestion: entry.card.question,
+      category: entry.card.category,
+      paper: entry.card.paper,
+      confidence: round(score.confidence),
+      reason: explainEssayScore(score),
+      linkedCopies: answersByCard.get(entry.card.id)?.length || 0,
+    }));
+
+  return { acceptedCards, reviewCandidates };
+}
+
+function collapseEssayEntries(entries: EssayPromptEntry[]) {
+  const byCard = new Map<string, PyqCard>();
+  for (const entry of entries) {
+    if (!byCard.has(entry.card.id)) byCard.set(entry.card.id, entry.card);
+  }
+  return [...byCard.values()];
+}
+
+function scoreEssayCandidates(
+  row: ReturnType<typeof loadOfficialRows>[number],
+  entries: EssayPromptEntry[],
+) {
+  const officialPromptTokens = uniqueValues(essayTokens(row.question));
+  const officialThemeTokens = uniqueValues(essayThemeTokens([...row.syllabusTags, ...row.keywords].join(" ")));
+  const bestByCard = new Map<string, { entry: EssayPromptEntry; score: EssayScore }>();
+
+  for (const entry of entries) {
+    if (!entry.promptLike) continue;
+
+    const sharedPromptTokens = intersect(officialPromptTokens, entry.promptTokens);
+    const sharedThemeTokens = intersect(officialThemeTokens, entry.cardThemeTokens);
+    if (sharedPromptTokens.length === 0) continue;
+
+    const promptCoverage = sharedPromptTokens.length / Math.max(1, officialPromptTokens.length);
+    const promptJaccard = sharedPromptTokens.length / Math.max(1, new Set([...officialPromptTokens, ...entry.promptTokens]).size);
+    const themeCoverage = sharedThemeTokens.length
+      ? sharedThemeTokens.length / Math.max(1, Math.min(officialThemeTokens.length || 1, new Set(entry.cardThemeTokens).size || 1))
+      : 0;
+    const confidence = Math.min(0.94, promptCoverage * 0.68 + promptJaccard * 0.22 + themeCoverage * 0.1);
+    const score: EssayScore = {
+      confidence,
+      promptCoverage,
+      promptJaccard,
+      themeCoverage,
+      sharedPromptTokens,
+      sharedThemeTokens,
+      matchFloor: Math.max(promptCoverage, promptJaccard, themeCoverage),
+    };
+
+    if (
+      sharedPromptTokens.length < 2
+      && !(sharedPromptTokens.length >= 1 && themeCoverage >= 0.34 && promptCoverage >= 0.12 && confidence >= 0.24)
+    ) {
+      continue;
+    }
+
+    const existing = bestByCard.get(entry.card.id);
+    if (!existing || essayScoreSortValue(score) > essayScoreSortValue(existing.score)) {
+      bestByCard.set(entry.card.id, { entry, score });
+    }
+  }
+
+  return [...bestByCard.values()].sort((a, b) => essayScoreSortValue(b.score) - essayScoreSortValue(a.score));
+}
+
+function essayScoreSortValue(score: EssayScore) {
+  return Math.max(score.confidence, score.matchFloor) + Math.min(0.12, score.sharedPromptTokens.length * 0.03);
+}
+
+function classifyEssayScore(score: EssayScore): MatchType | null {
+  if (score.sharedPromptTokens.length >= 3 && score.promptCoverage >= 0.5) return "strong";
+  if (score.sharedPromptTokens.length >= 2 && score.promptCoverage >= 0.24 && score.confidence >= 0.22) return "topic-match";
+  if (score.sharedPromptTokens.length >= 1 && score.themeCoverage >= 0.34 && score.promptCoverage >= 0.12 && score.confidence >= 0.24) {
+    return "loose-topic-match";
+  }
+  return null;
+}
+
+function explainEssayScore(score: EssayScore) {
+  const parts = [];
+  if (score.sharedPromptTokens.length) parts.push(`shared prompt: ${score.sharedPromptTokens.slice(0, 3).join(", ")}`);
+  if (score.sharedThemeTokens.length) parts.push(`shared theme: ${score.sharedThemeTokens.slice(0, 3).join(", ")}`);
+  parts.push(`prompt cover ${Math.round(score.promptCoverage * 100)}%`);
+  return parts.join("; ");
 }
 
 function scoreCandidates(
@@ -730,6 +1003,10 @@ function isUsableExtractedQuestion(value: string) {
   return tokens(value).length >= 4;
 }
 
+function isEssayCard(card: PyqCard) {
+  return card.paper.toLowerCase() === "essay" || card.category.toLowerCase() === "essay";
+}
+
 function isEssayRow(row: ReturnType<typeof loadOfficialRows>[number]) {
   return row.subjectKey === "essay" || row.paper.toLowerCase() === "essay" || row.category.toLowerCase() === "essay";
 }
@@ -826,6 +1103,46 @@ function weight(token: string, idf: Map<string, number>) {
   return idf.get(token) || 1;
 }
 
+function essayTokens(value: string) {
+  const key = String(value || "");
+  const cached = ESSAY_TOKEN_CACHE.get(key);
+  if (cached) return cached;
+
+  const out = normalizeQuestion(key)
+    .replace(/\bcannot\b/g, "can not")
+    .split(" ")
+    .map(stem)
+    .map(essayNormalizeToken)
+    .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token) && !ESSAY_FALLBACK_NOISE.has(token));
+  ESSAY_TOKEN_CACHE.set(key, out);
+  return out;
+}
+
+function essayThemeTokens(value: string) {
+  const key = String(value || "");
+  const cached = ESSAY_THEME_TOKEN_CACHE.get(key);
+  if (cached) return cached;
+
+  const out = normalizeQuestion(key)
+    .replace(/\bcannot\b/g, "can not")
+    .split(" ")
+    .map(stem)
+    .map(essayNormalizeToken)
+    .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token));
+  ESSAY_THEME_TOKEN_CACHE.set(key, out);
+  return out;
+}
+
+function essayCoreTokens(value: string) {
+  const key = String(value || "");
+  const cached = ESSAY_CORE_TOKEN_CACHE.get(key);
+  if (cached) return cached;
+
+  const out = essayTokens(key).filter((token) => !isEssayMetadataToken(token));
+  ESSAY_CORE_TOKEN_CACHE.set(key, out);
+  return out;
+}
+
 function tokens(value: string) {
   const key = String(value || "");
   const cached = TOKEN_CACHE.get(key);
@@ -837,6 +1154,25 @@ function tokens(value: string) {
     .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token));
   TOKEN_CACHE.set(key, out);
   return out;
+}
+
+function essayNormalizeToken(token: string) {
+  if (["equality", "equal", "equity", "equally"].includes(token)) return "equal";
+  if (["education", "educational", "educat"].includes(token)) return "educat";
+  if (["civilization", "civilisation", "civiliz"].includes(token)) return "civiliz";
+  if (["culture", "cultural", "cultur"].includes(token)) return "cultur";
+  if (["democracy", "democratic", "democr"].includes(token)) return "democr";
+  if (["society", "social", "societ"].includes(token)) return "societ";
+  if (["technology", "technological", "technolog"].includes(token)) return "technolog";
+  if (["poverty", "poor", "pover"].includes(token)) return "pover";
+  if (["prosperity", "prosperous", "prosper"].includes(token)) return "prosper";
+  if (["happiness", "happy", "happi"].includes(token)) return "happi";
+  if (["history", "historical", "histor"].includes(token)) return "histor";
+  if (["federalism", "federal"].includes(token)) return "federal";
+  if (["patriarchy", "patriarchal", "patriarch"].includes(token)) return "patriarch";
+  if (["justice", "just", "justic"].includes(token)) return "justic";
+  if (["election", "electoral", "elect"].includes(token)) return "elect";
+  return token;
 }
 
 function stem(token: string) {
@@ -870,6 +1206,80 @@ function normalizeQuestion(value: string) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractEssayPrompts(value: string) {
+  const clean = cleanEssayPromptText(value);
+  const matches = [...clean.matchAll(ESSAY_PROMPT_MARKER)];
+  const prompts: string[] = [];
+
+  if (matches.length > 0) {
+    for (let index = 0; index < matches.length; index += 1) {
+      const match = matches[index];
+      let start = (match.index || 0) + match[0].length;
+      while (start < clean.length && /[\s.):-]/.test(clean[start])) start += 1;
+      const end = index + 1 < matches.length ? (matches[index + 1].index || clean.length) : clean.length;
+      const prompt = cleanEssayPromptText(clean.slice(start, end));
+      if (!prompt || isEssayInstructionSegment(prompt)) continue;
+      prompts.push(prompt);
+    }
+  }
+
+  if (prompts.length === 0) prompts.push(clean);
+  return uniqueClean(prompts);
+}
+
+function cleanEssayPromptText(value: string) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/^section\s*[-:]\s*[a-z]\s*/i, "")
+    .replace(/^\d{1,2}\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueClean(values: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const clean = cleanEssayPromptText(value);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+function isEssayInstructionSegment(value: string) {
+  return /^(to\s+q\b|to\s+\d\b|write\b|choose\b|choosing\b|essay\b|one essay\b|two essays\b)/i.test(value.trim());
+}
+
+function isEssayPromptLike(value: string, promptTokens = essayTokens(value)) {
+  const clean = cleanEssayPromptText(value);
+  if (!clean) return false;
+  if (clean.length > 180) return false;
+  if (promptTokens.length === 0 || promptTokens.length > 20) return false;
+  if (ESSAY_PROMPT_BLOCKLIST.some((pattern) => pattern.test(clean))) return false;
+  return normalizeQuestion(clean).length >= 8;
+}
+
+function essayTokenSignature(tokensToJoin: string[]) {
+  return uniqueValues(tokensToJoin).join(" ");
+}
+
+function isEssayMetadataToken(token: string) {
+  return ESSAY_METADATA_TOKENS.has(token) || /^\d{4}$/.test(token);
+}
+
+function uniqueValues(values: string[]) {
+  return [...new Set(values)];
+}
+
+function intersect(left: string[], right: string[]) {
+  const rightSet = new Set(right);
+  return uniqueValues(left.filter((token) => rightSet.has(token)));
 }
 
 function round(value: number) {

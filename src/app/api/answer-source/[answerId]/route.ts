@@ -4,12 +4,15 @@ import {
   contentDispositionFilename,
 } from "@/lib/answer-sources";
 import { enforcePdfAccess, resolvePdfSourceForToken } from "@/lib/pdf-access";
+import { requireSessionResponseIfConfigured } from "@/lib/session-access";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ answerId: string }> },
 ) {
   const { answerId } = await params;
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
   const accessError = await enforcePdfAccess(req, answerId, {
     skipOriginCheck: Boolean(req.nextUrl.searchParams.get("token")),
   });
@@ -17,7 +20,9 @@ export async function GET(
 
   const token = req.nextUrl.searchParams.get("token") || "";
   const resolved = resolvePdfSourceForToken(answerId, token);
-  if (!resolved.ok) return Response.json({ error: resolved.error }, { status: 403, headers: ANSWER_SOURCE_HEADERS });
+  if (!resolved.ok) {
+    return Response.json({ error: resolved.error }, { status: resolved.status, headers: ANSWER_SOURCE_HEADERS });
+  }
   const { source } = resolved;
 
   const range = req.headers.get("range");

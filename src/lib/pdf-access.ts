@@ -72,10 +72,16 @@ export async function enforcePdfAccess(
 
 export function resolvePdfSourceForToken(answerId: string, token: string) {
   const verified = verifyPdfAccessToken(token, answerId);
-  if (!verified.ok) return verified;
+  if (!verified.ok) return { ok: false as const, status: 403, error: verified.error };
 
   const source = getResolvedAnswerSource(answerId);
-  if (!source) return { ok: false as const, error: "Source not available." };
+  if (!source.ok) {
+    return {
+      ok: false as const,
+      status: source.kind === "runtime" ? 500 : 404,
+      error: source.kind === "runtime" ? source.error : "Source not available.",
+    };
+  }
 
   return {
     ok: true as const,
@@ -85,18 +91,28 @@ export function resolvePdfSourceForToken(answerId: string, token: string) {
 
 export function buildPdfEmbedResponse(answerId: string) {
   const source = getResolvedAnswerSource(answerId);
-  if (!source) return null;
+  if (!source.ok) {
+    return {
+      ok: false as const,
+      status: source.kind === "runtime" ? 500 : 404,
+      error: source.kind === "runtime" ? source.error : "Source not available.",
+    };
+  }
 
   const token = issuePdfAccessToken(answerId);
   return {
-    embedUrl: `/api/answer-source/${answerId}?token=${encodeURIComponent(token)}#page=${source.page}&toolbar=0&navpanes=0&scrollbar=0`,
-    page: source.page,
-    pageStatus: source.record.pageStatus || null,
-    sourceStatus: source.record.sourceStatus || null,
-    topperName: source.record.topperName,
-    rank: source.record.rank,
-    year: source.record.year,
-    tokenTtlSeconds: getPdfTokenTtlSeconds(),
+    ok: true as const,
+    payload: {
+      viewerUrl: `/pdf/${answerId}?token=${encodeURIComponent(token)}&page=${source.page}`,
+      embedUrl: `/pdf/${answerId}?token=${encodeURIComponent(token)}&page=${source.page}`,
+      page: source.page,
+      pageStatus: source.record.pageStatus || null,
+      sourceStatus: source.record.sourceStatus || null,
+      topperName: source.record.topperName,
+      rank: source.record.rank,
+      year: source.record.year,
+      tokenTtlSeconds: getPdfTokenTtlSeconds(),
+    },
   };
 }
 

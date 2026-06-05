@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { QuestionCards } from "@/components/QuestionCards";
-import { getBrowsePyqs } from "@/lib/pyq";
+import { OfficialQuestionCards } from "@/components/OfficialQuestionCards";
+import { searchOfficialBrowsePyqs } from "@/lib/official-pyqs";
 
 export const metadata: Metadata = {
   title: "Browse All Questions - UPSCat",
@@ -19,15 +19,11 @@ export default async function BrowsePage({
   const params = await searchParams;
   const search = params.q || "";
   const category = params.category || null;
-  const questions = await getBrowsePyqs({
-    query: search,
-    category: category || "",
-    limit: 240,
-  });
+  const questions = await searchOfficialBrowsePyqs(search, category || "", 240);
 
   return (
-    <QuestionCards
-      initialQuestions={questions}
+    <OfficialQuestionCards
+      questions={questions}
       totalFiltered={questions.length}
       searchParams={{
         q: search,

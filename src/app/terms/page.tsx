@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import { MarketingPageFrame } from "@/components/marketing/MarketingShell";
-import { FOUNDER_EMAIL, SITE_NAME } from "@/lib/marketing";
+import {
+  COPYRIGHT_NOTICE,
+  FOUNDER_EMAIL,
+  RIGHTS_CONTACT_EMAIL,
+  SITE_NAME,
+} from "@/lib/marketing";
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} Terms`,
@@ -12,21 +17,37 @@ export default function TermsPage() {
     <MarketingPageFrame
       eyebrow="Terms"
       title="Basic terms for using the site and app."
-      description={`${SITE_NAME} is meant to be useful, not legalistic. These terms are here to set clear expectations about access, usage, and future paid plans.`}
+      description={`${SITE_NAME} is meant to be useful, not legalistic. These terms set expectations for educational use, ownership, and content concerns.`}
     >
       <div className="grid gap-6 text-sm leading-8 text-secondary sm:text-base">
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
-          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Use of the product</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Educational use</h2>
           <p className="mt-4">
-            You may use the site and app for personal educational use. Please do not abuse, disrupt, scrape, or intentionally damage the service.
+            You may use the site and app for personal, non-commercial educational use. Please do
+            not abuse, disrupt, bulk-scrape, misrepresent, or intentionally damage the service.
           </p>
         </section>
 
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
-          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Accounts and pricing</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Ownership and copyright</h2>
           <p className="mt-4">
-            Account features may be introduced later. Paid plans may also be offered later, and
-            any billing-specific terms will be shown clearly at the point of purchase.
+            Original topper copies, exam papers, and other third-party study materials remain the
+            property of their respective authors, publishers, and rights holders.
+          </p>
+          <p className="mt-4">
+            {COPYRIGHT_NOTICE}
+          </p>
+        </section>
+
+        <section className="soft-panel rounded-[28px] p-6 sm:p-7">
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Corrections and takedowns</h2>
+          <p className="mt-4">
+            If you believe content on the site is misattributed, infringing, or should not be
+            available, send a good-faith notice with the relevant details to <a className="text-accent underline-offset-4 hover:underline" href={`mailto:${RIGHTS_CONTACT_EMAIL}`}>{RIGHTS_CONTACT_EMAIL}</a>.
+          </p>
+          <p className="mt-4">
+            We may review, limit, correct, or remove material while that request is assessed, and
+            valid takedown requests will be acted on as quickly as reasonably possible.
           </p>
         </section>
 

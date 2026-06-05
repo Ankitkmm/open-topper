@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SubjectWorkspace } from "@/components/SubjectWorkspace";
-import { getSubjectPageMeta, getSubjectPyqs, getSubjectSyllabusNodes } from "@/lib/pyq";
+import { getSubjectPageMeta, getSubjectPyqShells, getSubjectSyllabusNodes } from "@/lib/pyq";
+import { makeProgressItemId } from "@/lib/progress-items";
 
 export const metadata: Metadata = {
   title: "Public Administration Optional - UPSCat",
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
 export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string; syllabus?: string }> }) {
   const params = await searchParams;
   const subject = getSubjectPageMeta("public-administration");
-  const cards = await getSubjectPyqs("public-administration", params.q || "", 1000, params.syllabus || "");
+  const cards = await getSubjectPyqShells("public-administration", params.q || "", 1000, params.syllabus || "");
+  const progressQuestionIds = (await getSubjectPyqShells("public-administration", "", 5000, "")).map((question) => makeProgressItemId("pyq", question.id));
   const syllabusNodes = await getSubjectSyllabusNodes("public-administration");
 
   return (
@@ -22,6 +24,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ q
       syllabusNodes={syllabusNodes}
       query={params.q || ""}
       selectedSyllabusId={params.syllabus || ""}
+      progressQuestionIds={progressQuestionIds}
       baseHref={subject.href}
     />
   );

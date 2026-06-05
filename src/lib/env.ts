@@ -6,6 +6,8 @@ loadLocalEnv();
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_SEARCH = 120;
 const DEFAULT_RATE_LIMIT_MAX_PDF = 45;
+const DEFAULT_RATE_LIMIT_MAX_AUTH = 12;
+const DEFAULT_RATE_LIMIT_MAX_PROGRESS = 180;
 const DEFAULT_PDF_TOKEN_TTL_SECONDS = 90;
 
 export function getEnv(name: string, fallback = "") {
@@ -46,6 +48,14 @@ export function getPdfRateLimitMax() {
   return parsePositiveInteger(getEnv("RATE_LIMIT_PDF_MAX"), DEFAULT_RATE_LIMIT_MAX_PDF);
 }
 
+export function getAuthRateLimitMax() {
+  return parsePositiveInteger(getEnv("RATE_LIMIT_AUTH_MAX"), DEFAULT_RATE_LIMIT_MAX_AUTH);
+}
+
+export function getProgressRateLimitMax() {
+  return parsePositiveInteger(getEnv("RATE_LIMIT_PROGRESS_MAX"), DEFAULT_RATE_LIMIT_MAX_PROGRESS);
+}
+
 export function getPdfTokenTtlSeconds() {
   return parsePositiveInteger(getEnv("PDF_TOKEN_TTL_SECONDS"), DEFAULT_PDF_TOKEN_TTL_SECONDS);
 }
@@ -68,6 +78,22 @@ export function getR2Credentials() {
   if (!accessKeyId || !secretAccessKey) return null;
 
   return { accessKeyId, secretAccessKey };
+}
+
+export function getSupabaseUrl() {
+  return getEnv("NEXT_PUBLIC_SUPABASE_URL", getEnv("SUPABASE_URL"));
+}
+
+export function getSupabasePublishableKey() {
+  return getEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", getEnv("SUPABASE_ANON_KEY")));
+}
+
+export function isSupabaseConfigured() {
+  return Boolean(getSupabaseUrl() && getSupabasePublishableKey());
+}
+
+export function isSupabaseEmailAuthConfigured() {
+  return isSupabaseConfigured();
 }
 
 export function parsePositiveInteger(value: string, fallback: number) {

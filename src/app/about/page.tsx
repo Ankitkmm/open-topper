@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { MarketingPageFrame } from "@/components/marketing/MarketingShell";
-import { FOUNDER_EMAIL, SITE_NAME, SITE_DOMAIN } from "@/lib/marketing";
+import {
+  COPYRIGHT_NOTICE,
+  FOUNDER_EMAIL,
+  RIGHTS_CONTACT_EMAIL,
+  SITE_DOMAIN,
+  SITE_NAME,
+} from "@/lib/marketing";
 
 export const metadata: Metadata = {
   title: `About ${SITE_NAME}`,
@@ -11,28 +17,27 @@ export default function AboutPage() {
   return (
     <MarketingPageFrame
       eyebrow="About"
-      title="Built to democratize UPSC prep without adding more noise."
-      description={`${SITE_NAME} exists for a simple reason: serious preparation should not depend on who has the best folder system, the cleanest Telegram archive, or the right insider link at the right time.`}
+      title="Built as a calm educational reference for UPSC preparation."
+      description={`${SITE_NAME} exists to help serious aspirants move from PYQs to study material with less clutter, less hunting, and clearer context.`}
     >
       <div className="grid gap-6 text-sm leading-8 text-secondary sm:text-base">
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
-          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">What the product is trying to solve</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">What this site is for</h2>
           <p className="mt-4">
-            {SITE_NAME} is trying to make prep more searchable, more trackable, and less dependent
-            on scattered PDFs, random channels, and memory-based revision.
+            {SITE_NAME} is an independent study utility for searching PYQs, reviewing topper-copy
+            references, and organizing revision in one place.
           </p>
           <p className="mt-4">
-            It is meant for students who already know the exam is hard and do not need more hype.
-            They need a workspace that helps them move from PYQs to topper approaches to revision
-            decisions with less friction.
+            It is built for personal educational use by students who want a quieter, more direct
+            path from question to reference material.
           </p>
         </section>
 
         <section className="grid gap-4 sm:grid-cols-3">
           {[
-            "Track progress in a way that feels real, not performative.",
-            "Search by issue, theme, or paper instead of guessing where you saved something.",
-            "Stay close to the original question while reviewing topper signals and revision paths.",
+            "Search by issue, theme, or paper instead of chasing scattered folders and links.",
+            "Review study references in the context of the original PYQ, not as isolated files.",
+            "Track revision progress in a lightweight way that stays secondary to actual study.",
           ].map((item) => (
             <div key={item} className="soft-panel rounded-[24px] p-5">
               {item}
@@ -41,18 +46,42 @@ export default function AboutPage() {
         </section>
 
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
-          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Why this matters</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Educational purpose only</h2>
           <p className="mt-4">
-            The long-term goal is simple: democratize access to better prep workflows. A student
-            should be able to study smarter because the product is thoughtful, not because they
-            happened to collect the right material from the right place at the right time.
+            {SITE_NAME} is presented as an educational reference project. It is not a coaching
+            service, not an endorsement by any topper or institution, and not presented as a
+            marketplace for study material.
+          </p>
+          <p className="mt-4">
+            The focus is practical access and better organization. The site has no commercial
+            interest in claiming ownership over third-party study material or promoting any
+            institute through these references.
+          </p>
+        </section>
+
+        <section className="soft-panel rounded-[28px] p-6 sm:p-7">
+          <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Ownership and attribution</h2>
+          <p className="mt-4">
+            Original topper copies, question papers, and third-party source materials remain the
+            property of their respective authors, publishers, and rights holders.
+          </p>
+          <p className="mt-4">
+            {COPYRIGHT_NOTICE}
+          </p>
+          <p className="mt-4">
+            If you represent a rights holder and want a correction, attribution update, or removal
+            review, email <a className="text-accent underline-offset-4 hover:underline" href={`mailto:${RIGHTS_CONTACT_EMAIL}`}>{RIGHTS_CONTACT_EMAIL}</a>.
+          </p>
+          <p className="mt-4">
+            Good-faith takedown requests will be reviewed promptly, and material may be limited or
+            removed while the request is assessed.
           </p>
         </section>
 
         <section className="soft-panel rounded-[28px] p-6 sm:p-7">
           <h2 className="text-2xl font-semibold tracking-[-0.03em] text-primary">Contact</h2>
           <p className="mt-4">
-            If you want to reach out, join the waitlist or write directly to <a className="text-accent underline-offset-4 hover:underline" href={`mailto:${FOUNDER_EMAIL}`}>{FOUNDER_EMAIL}</a>.
+            For general questions, factual corrections, or study-material concerns, write to <a className="text-accent underline-offset-4 hover:underline" href={`mailto:${FOUNDER_EMAIL}`}>{FOUNDER_EMAIL}</a>.
           </p>
           <p className="mt-4 text-muted">Home: {SITE_DOMAIN}</p>
         </section>

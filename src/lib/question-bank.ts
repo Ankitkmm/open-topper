@@ -18,6 +18,7 @@ import {
   isPublishableQuestionText,
   normalizePublicTopperName,
 } from "./public-records";
+import { bestTokenMatchScore, matchesSearchTerm, searchTerms, searchTokens } from "./search-text";
 
 interface RawInsight {
   answerId: string;
@@ -297,6 +298,7 @@ const SUBJECT_HINT_PATTERNS: Array<{ subjectKey: SubjectKey; patterns: RegExp[] 
 let cachedIndex: WorkspaceIndex | null = null;
 const TOKEN_CACHE = new Map<string, string[]>();
 const TEXT_MATCH_CACHE = new Map<string, number>();
+const QUESTION_SEARCH_TOKEN_CACHE = new Map<string, string[]>();
 
 export function getWorkspaceIndex() {
   if (cachedIndex) return cachedIndex;
@@ -323,9 +325,9 @@ export function buildWorkspaceSnapshot(): WorkspaceSnapshot {
 
   const answerById = new Map(answerRecords.map((record) => [record.answerId, record]));
   const fallbackNodes = new Map<string, WorkspaceSyllabusNode>();
-  const questions: WorkspaceQuestion[] = rawQuestions.cards
+  const questions: WorkspaceQuestion[] = mergeDuplicateQuestions(rawQuestions.cards
     .map((card) => sanitizeQuestion(card, canonical, answerById, ocrSummaries, fallbackNodes))
-    .filter((card): card is WorkspaceQuestion => Boolean(card));
+    .filter((card): card is WorkspaceQuestion => Boolean(card)));
 
   const nodeById = new Map<string, WorkspaceSyllabusNode>();
   for (const node of canonical.allNodes) {
@@ -354,12 +356,12 @@ export function buildWorkspaceSnapshot(): WorkspaceSnapshot {
 export function getSubjectWorkspaceQuestions(subjectKey: SubjectKey, query = "", syllabusNodeId = "") {
   const index = getWorkspaceIndex();
   const questions = index.questionsBySubject.get(subjectKey) || [];
-  const terms = queryTerms(query);
+  const terms = searchTerms(query);
 
   return questions.filter((question) => {
     if (syllabusNodeId && question.syllabusNodeId !== syllabusNodeId) return false;
     if (!terms.length) return true;
-    return terms.every((term) => question.searchText.includes(term));
+    return searchScore(question, terms) > 0;
   });
 }
 
@@ -372,7 +374,7 @@ export function searchWorkspaceQuestions(options: {
   const { query = "", subjectKey = "", syllabusNodeId = "", limit = 80 } = options;
   const index = getWorkspaceIndex();
   const subjects = subjectKey ? [subjectKey] : getSubjectDefinitions().map((definition) => definition.key);
-  const terms = queryTerms(query);
+  const terms = searchTerms(query);
 
   let matches = subjects.flatMap((key) => index.questionsBySubject.get(key) || []);
   if (syllabusNodeId) matches = matches.filter((question) => question.syllabusNodeId === syllabusNodeId);
@@ -388,7 +390,9 @@ export function searchWorkspaceQuestions(options: {
 }
 
 export function getWorkspaceSyllabusNodes(subjectKey: SubjectKey) {
-  return (getWorkspaceIndex().syllabusNodesBySubject.get(subjectKey) || []).filter((node) => !node.isFallback);
+  const nodes = getWorkspaceIndex().syllabusNodesBySubject.get(subjectKey) || [];
+  const primary = nodes.filter((node) => !node.isFallback);
+  return primary.length ? primary : nodes;
 }
 
 export function getWorkspaceNode(nodeId: string) {
@@ -421,10 +425,17 @@ function sanitizeQuestion(
   ocrSummaries: Record<string, OcrSummaryEntry>,
   fallbackNodes: Map<string, WorkspaceSyllabusNode>,
 ) {
-  const questionText = cleanSentence(card.question);
-  if (!isPublishableQuestionText(questionText)) return null;
+  let questionText = cleanSentence(card.question);
+  if (!isUsefulQuestionText(questionText)) return null;
 
   const placement = resolvePlacement(card, canonical, fallbackNodes);
+  const essayPromptMatch = placement.subjectKey === "essay"
+    ? resolveEssayPromptMatch(questionText, canonical)
+    : null;
+  if (placement.subjectKey === "essay") {
+    if (!essayPromptMatch && shouldRejectEssayQuestion(questionText)) return null;
+    if (essayPromptMatch?.prompt) questionText = essayPromptMatch.prompt;
+  }
   const subject = getSubjectDefinition(placement.subjectKey);
   const linkedInsights = (card.linkedInsights || [])
     .map((copy) => sanitizeCopy(copy, answerById.get(copy.answerId), ocrSummaries))
@@ -463,11 +474,13 @@ function sanitizeCopy(
 ): WorkspaceCopy {
   const driveId = answerRecord?.sourceDriveId || "";
   const rawOcrSummary = driveId ? cleanOcrSummary(ocrSummaries[driveId]?.summary || "") : "";
+  const sheetSummary = cleanPublicText(copy.interpretation || "");
   const summaryAvailable = Boolean(
     rawOcrSummary
     && (answerRecord?.summarySource || copy.summarySource) === "ocr"
     && rawOcrSummary.length >= 120,
   );
+  const fallbackSummaryAvailable = !summaryAvailable && sheetSummary.length >= 120;
 
   return {
     answerId: copy.answerId,
@@ -480,9 +493,9 @@ function sanitizeCopy(
     pageStatus: copy.pageStatus ?? answerRecord?.pageStatus ?? null,
     sourceAvailable: Boolean(copy.sourceAvailable ?? answerRecord?.sourceAvailable),
     sourceStatus: copy.sourceStatus ?? answerRecord?.sourceStatus ?? null,
-    summary: summaryAvailable ? rawOcrSummary : "",
-    summaryAvailable,
-    summarySource: summaryAvailable ? "ocr" : null,
+    summary: summaryAvailable ? rawOcrSummary : (fallbackSummaryAvailable ? sheetSummary : ""),
+    summaryAvailable: summaryAvailable || fallbackSummaryAvailable,
+    summarySource: summaryAvailable ? "ocr" : (fallbackSummaryAvailable ? "sheet" : null),
   };
 }
 
@@ -557,7 +570,7 @@ function resolveEssayNode(
   canonical: ReturnType<typeof loadCanonicalSyllabusIndex>,
   fallbackNodes: Map<string, WorkspaceSyllabusNode>,
 ) {
-  const essaySectionId = canonical.essaySectionByPrompt.get(normalizeEssayPrompt(question));
+  const essaySectionId = resolveEssayPromptMatch(question, canonical)?.sectionId;
   if (essaySectionId) {
     const existing = canonical.nodeById.get(essaySectionId);
     if (existing) return existing;
@@ -701,6 +714,17 @@ function cleanOcrSummary(value: string) {
   return lines.join(" ").replace(/\s+/g, " ").trim().slice(0, 520);
 }
 
+function isUsefulQuestionText(value: string) {
+  const clean = cleanSentence(value);
+  if (!isPublishableQuestionText(clean)) return false;
+  if (!clean || clean.length < 24) return false;
+  if (/^no questions were found\\b/i.test(clean)) return false;
+  if (/^(?:q\\s*)?\\d+[a-e]?[.)-]?$/i.test(clean)) return false;
+  const tokenCount = searchTerms(clean).length;
+  if (tokenCount < 4 && clean.length < 40) return false;
+  return true;
+}
+
 function buildSearchText(card: RawCard, node: SyllabusNode, copies: WorkspaceCopy[]) {
   return [
     cleanSentence(card.question),
@@ -720,20 +744,19 @@ function buildSearchText(card: RawCard, node: SyllabusNode, copies: WorkspaceCop
 
 function searchScore(question: WorkspaceQuestion, terms: string[]) {
   let score = 0;
+  const questionText = question.question.toLowerCase();
+  const searchText = question.searchText.toLowerCase();
+  const questionTokens = questionSearchTokens(question);
+  const syllabusTokensForQuestion = searchTokens(question.syllabusPath.join(" "));
   for (const term of terms) {
-    if (!question.searchText.includes(term)) return 0;
-    if (question.question.toLowerCase().includes(term)) score += 5;
-    else if (question.syllabusPath.some((label) => label.toLowerCase().includes(term))) score += 3;
-    else score += 1;
+    if (!matchesSearchTerm(term, searchText, questionTokens)) return 0;
+    const tokenScore = bestTokenMatchScore(term, questionTokens);
+    if (questionText.includes(term)) score += 5 + tokenScore;
+    else if (question.syllabusPath.some((label) => label.toLowerCase().includes(term))) score += 3 + tokenScore;
+    else if (matchesSearchTerm(term, question.syllabusPath.join(" ").toLowerCase(), syllabusTokensForQuestion)) score += 2.25 + tokenScore;
+    else score += 1 + tokenScore;
   }
   return score + question.topperCount;
-}
-
-function queryTerms(value: string) {
-  return cleanSentence(value)
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((term) => term.length > 1);
 }
 
 function filteredTokens(value: string) {
@@ -742,6 +765,14 @@ function filteredTokens(value: string) {
   if (cached) return cached;
   const tokens = syllabusTokens(value).filter((token) => !QUESTION_STOP_WORDS.has(token));
   TOKEN_CACHE.set(key, tokens);
+  return tokens;
+}
+
+function questionSearchTokens(question: WorkspaceQuestion) {
+  const cached = QUESTION_SEARCH_TOKEN_CACHE.get(question.id);
+  if (cached) return cached;
+  const tokens = searchTokens([question.question, question.searchText, question.syllabusPath.join(" ")].join(" "));
+  QUESTION_SEARCH_TOKEN_CACHE.set(question.id, tokens);
   return tokens;
 }
 
@@ -759,9 +790,124 @@ function summarizeQuestion(value: string) {
 function normalizeEssayPrompt(value: string) {
   return cleanSentence(value)
     .toLowerCase()
+    .replace(/^(?:section\s+[ab]\s+|topic\s+\d+\s+)?q(?:uestion)?\.?\s*\d+[a-z]?\)?\s*/i, "")
+    .replace(/^\d+[a-z]?[.)]\s*/, "")
+    .replace(/^["“”']+|["“”']+$/g, "")
     .replace(/['"`]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function resolveEssayPromptMatch(
+  question: string,
+  canonical: ReturnType<typeof loadCanonicalSyllabusIndex>,
+) {
+  const normalized = normalizeEssayPrompt(question);
+  if (!normalized) return null;
+
+  const exactSectionId = canonical.essaySectionByPrompt.get(normalized);
+  if (exactSectionId) {
+    return {
+      normalized,
+      prompt: canonical.essayPromptByNormalized.get(normalized) || question,
+      sectionId: exactSectionId,
+    };
+  }
+
+  const matches: Array<{ normalized: string; prompt: string; sectionId: string }> = [];
+  for (const [promptKey, sectionId] of canonical.essaySectionByPrompt.entries()) {
+    if (
+      normalized.includes(promptKey)
+      || promptKey.includes(normalized)
+    ) {
+      matches.push({
+        normalized: promptKey,
+        prompt: canonical.essayPromptByNormalized.get(promptKey) || promptKey,
+        sectionId,
+      });
+    }
+  }
+
+  if (matches.length !== 1) return null;
+  return matches[0];
+}
+
+function shouldRejectEssayQuestion(question: string) {
+  const value = cleanSentence(question);
+  const normalized = normalizeEssayPrompt(value);
+  const promptMarkerCount = (value.match(/\bq(?:uestion)?\.?\s*\d+[a-z]?\b/gi) || []).length;
+  if (!normalized) return true;
+  if (promptMarkerCount > 1) return true;
+  if (normalized.length > 180) return true;
+  if (/^(?:write two essays|having discussed|what are|what is|why |how |who |which |so |then )/i.test(normalized)) return true;
+  return false;
+}
+
+function mergeDuplicateQuestions(questions: WorkspaceQuestion[]) {
+  const grouped = new Map<string, WorkspaceQuestion>();
+
+  for (const question of questions) {
+    const key = [
+      question.subjectKey,
+      question.syllabusNodeId,
+      normalizeQuestionKey(question.question),
+    ].join("::");
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        ...question,
+        linkedInsights: [...question.linkedInsights],
+      });
+      continue;
+    }
+
+    if (questionQuality(question.question) > questionQuality(existing.question)) {
+      existing.question = question.question;
+      existing.marks = question.marks ?? existing.marks;
+      existing.estimatedYear = question.estimatedYear ?? existing.estimatedYear;
+    }
+
+    for (const copy of question.linkedInsights) {
+      if (!existing.linkedInsights.some((entry) => entry.answerId === copy.answerId)) {
+        existing.linkedInsights.push(copy);
+      }
+    }
+
+    existing.linkedInsights.sort((left, right) => {
+      if (Number(left.sourceAvailable) !== Number(right.sourceAvailable)) {
+        return Number(right.sourceAvailable) - Number(left.sourceAvailable);
+      }
+      if ((left.rank || 9999) !== (right.rank || 9999)) return (left.rank || 9999) - (right.rank || 9999);
+      if ((right.year || 0) !== (left.year || 0)) return (right.year || 0) - (left.year || 0);
+      return (left.topperName || "").localeCompare(right.topperName || "");
+    });
+    existing.topperCount = existing.linkedInsights.length;
+    existing.searchText = `${existing.searchText} ${question.searchText}`.trim();
+  }
+
+  return [...grouped.values()];
+}
+
+function normalizeQuestionKey(value: string) {
+  return cleanSentence(value)
+    .toLowerCase()
+    .replace(/^q(?:uestion)?\.?\s*\d+[a-z]?\)?\s*/i, "")
+    .replace(/\(answer in \d+ words?\)/gi, "")
+    .replace(/\(\d+\s*marks?\)/gi, "")
+    .replace(/\b\d+\s*marks?\b/gi, "")
+    .replace(/\b\d+\s*words?\b/gi, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function questionQuality(value: string) {
+  const clean = cleanSentence(value);
+  let score = 0;
+  if (/\bmarks?\b/i.test(clean)) score += 3;
+  if (!/\banswer in \d+ words?\b/i.test(clean)) score += 2;
+  if ((clean.match(/\bq(?:uestion)?\.?\s*\d+/gi) || []).length <= 1) score += 2;
+  if (clean.length <= 220) score += 1;
+  return score;
 }
 
 function cleanSentence(value: string) {
@@ -802,7 +948,7 @@ function hydrateWorkspaceIndex(snapshot: WorkspaceSnapshot): WorkspaceIndex {
     syllabusNodesBySubject.set(
       definition.key,
       snapshot.syllabusNodes
-        .filter((node) => node.subjectKey === definition.key && node.questionCount > 0 && !node.isFallback)
+        .filter((node) => node.subjectKey === definition.key && node.questionCount > 0)
         .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)),
     );
   }

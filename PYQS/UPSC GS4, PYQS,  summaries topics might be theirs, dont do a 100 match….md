@@ -121,3 +121,16 @@ c) What are the potential administrative and ethical dilemmas for the District C
 2023	Theory	4b	Differentiate 'moral intuition' from 'moral reasoning’ with suitable examples.	Morals	10		4b  
 2023	Theory	5a	Is conscience a more reliable guide when compared to laws, rules and regulations in the context of ethical decision-making? Discuss.	Conscience,Laws Rules Regulations	10		5a  
   
+
+Main Themes of UPSC Essay Topics
+The UPSC Essay paper covers a wide range of topics under certain key themes:
+
+Philosophical topics
+Social issues
+Political and governance topics
+Economic development
+Science and technology
+International relations
+Environment and ecology
+Current affairs
+

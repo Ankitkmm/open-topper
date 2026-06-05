@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, CheckCircle2, Search } from "lucide-react";
-import { AuthControls } from "@/components/auth/AuthControls";
+import { ArrowRight, BookOpen, Search } from "lucide-react";
+import { StudyNav } from "@/components/StudyNav";
 import { getSubjectDefinition, getSubjectDefinitions } from "@/lib/subject-definitions";
 import type { WorkspaceQuestion } from "@/lib/question-bank";
 
@@ -14,97 +14,85 @@ interface Props {
 
 export function QuestionCards({ initialQuestions, totalFiltered, searchParams }: Props) {
   const topSubjects = subjectSummary(initialQuestions);
+  const activeQuery = searchParams.q.trim();
 
   return (
-    <main className="safe-page min-h-screen">
-      <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-        <Link href="/" className="quiet-link mb-8 inline-flex items-center gap-2 text-xs uppercase tracking-[0.1em]">
-          Back to subjects
-        </Link>
+    <main className="library-page min-h-screen">
+      <StudyNav />
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px] lg:items-end">
-          <div>
-            <div className="overline mb-3">Global PYQ search</div>
-            <h1 className="max-w-3xl text-3xl font-semibold leading-tight sm:text-5xl">
-              Search PYQs first. Open the right subject workspace second.
-            </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-secondary">
-              This search now blends lexical and semantic retrieval so you can find the right PYQ
-              faster, then open the subject workspace for syllabus placement, topper copies, and inline PDFs.
-            </p>
-            <div className="mt-5">
-              <AuthControls compact />
-            </div>
-          </div>
+      <section className="mx-auto max-w-5xl px-5 py-8 sm:px-8 lg:px-10">
+        <div className="overline mb-3">Search all questions</div>
+        <h1 className="max-w-3xl text-3xl leading-tight tracking-[-0.02em] sm:text-4xl">
+          Find the right past question, then open it in context.
+        </h1>
 
-          <div className="terminal-frame p-4">
-            <div className="flex items-center gap-2 text-muted">
-              <CheckCircle2 size={15} />
-              <span className="overline">Current result set</span>
-            </div>
-            <div className="mono-stat mt-3 text-3xl text-accent">{totalFiltered.toLocaleString()}</div>
-            <p className="mt-1 text-xs text-muted">PYQs matching the active query</p>
-          </div>
-        </div>
-
-        <form action="/browse" className="mt-8 grid gap-3 terminal-frame p-3 sm:grid-cols-[1fr_220px_auto]">
-          <div className="relative">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
+        <form action="/browse" className="mt-7 flex flex-col gap-2 sm:flex-row">
+          <div className="relative flex-1">
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
             <input
               name="q"
               defaultValue={searchParams.q}
-              placeholder="Search PYQs by question text or syllabus words"
-              className="input-terminal w-full pl-10 pr-4 py-3 text-sm"
+              placeholder="Search by question text, topic, or syllabus words"
+              className="soft-input h-13 w-full py-3 pl-12 pr-4 text-base"
             />
           </div>
           <input
             name="category"
             defaultValue={searchParams.category}
-            placeholder="Subject filter (optional)"
-            className="input-terminal px-4 py-3 text-sm"
+            placeholder="Subject (optional)"
+            className="soft-input h-13 px-4 text-sm sm:w-48"
           />
-          <button className="btn-primary justify-center" type="submit">
-            Search <ArrowRight size={15} />
+          <button className="btn-primary h-13 justify-center px-5" type="submit">
+            Search <ArrowRight size={15} aria-hidden="true" />
           </button>
         </form>
 
-        {topSubjects.length > 0 && (
-          <div className="mt-5 flex flex-wrap gap-2">
-            {topSubjects.map(([subject, count]) => {
-              const route = getSubjectDefinitions().find((item) => item.shortLabel === subject || item.label === subject);
-              return (
-                <Link
-                  key={subject}
-                  href={route?.href || "/browse"}
-                  className="inline-flex items-center gap-2 border border-terminal px-3 py-1.5 text-xs text-secondary"
-                >
-                  <BookOpen size={12} />
-                  {subject}
-                  <span className="mono-stat text-muted">{count}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">
+          <span>
+            <span className="mono-stat text-secondary">{totalFiltered.toLocaleString()}</span>{" "}
+            {activeQuery ? <>results for “{activeQuery}”</> : "questions"}
+          </span>
+          {topSubjects.length > 0 && <span className="hidden h-1 w-1 rounded-full bg-[var(--border-strong)] sm:block" />}
+          {topSubjects.map(([subject, count]) => {
+            const route = getSubjectDefinitions().find(
+              (item) => item.shortLabel === subject || item.label === subject,
+            );
+            return (
+              <Link
+                key={subject}
+                href={route?.href || "/browse"}
+                className="study-badge transition hover:border-[var(--accent-border)] hover:text-accent"
+              >
+                {subject}
+                <span className="mono-stat text-muted">{count}</span>
+              </Link>
+            );
+          })}
+        </div>
 
-        <div className="mt-8 space-y-3">
+        <div className="mt-7 grid gap-3">
           {initialQuestions.map((question) => (
-            <article key={question.id} className="terminal-frame p-4 sm:p-5">
+            <article key={question.id} className="pyq-card p-5 sm:p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <Badge>{question.subjectLabel}</Badge>
-                    {question.estimatedYear && <Badge muted>{question.estimatedYear}</Badge>}
-                    {question.marks && <Badge muted>{question.marks} marks</Badge>}
-                    <Badge muted>{question.linkedInsights.length} topper copies</Badge>
+                    <span className="study-badge study-badge-accent">{question.subjectLabel}</span>
+                    {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
+                    {question.marks && <span className="study-badge">{question.marks} marks</span>}
+                    <span className="study-badge">
+                      {question.linkedInsights.length} topper {question.linkedInsights.length === 1 ? "copy" : "copies"}
+                    </span>
                   </div>
-                  <h2 className="text-base font-semibold leading-7 text-primary">{question.question}</h2>
+                  <h2 className="question-title text-lg leading-8 sm:text-xl">{question.question}</h2>
                   {question.syllabusPath.at(-1) && (
-                    <p className="mt-3 text-sm leading-6 text-secondary">{question.syllabusPath.at(-1)}</p>
+                    <p className="mt-3 text-sm leading-7 text-secondary">{question.syllabusPath.at(-1)}</p>
                   )}
                 </div>
-                <Link href={subjectQuestionHref(question)} className="btn-secondary shrink-0 justify-center">
-                  Open Subject <ArrowRight size={13} />
+                <Link
+                  href={subjectQuestionHref(question)}
+                  className="btn-secondary shrink-0 justify-center sm:self-center"
+                >
+                  Open <ArrowRight size={14} aria-hidden="true" />
                 </Link>
               </div>
             </article>
@@ -112,9 +100,9 @@ export function QuestionCards({ initialQuestions, totalFiltered, searchParams }:
         </div>
 
         {initialQuestions.length === 0 && (
-          <div className="py-20 text-center">
-            <BookOpen size={40} className="mx-auto mb-4 text-muted" />
-            <p className="text-secondary">No PYQs matched this search.</p>
+          <div className="soft-panel-muted mt-7 px-6 py-20 text-center">
+            <BookOpen size={34} className="mx-auto mb-4 text-muted" aria-hidden="true" />
+            <p className="text-secondary">No questions matched this search. Try a broader topic word.</p>
           </div>
         )}
       </section>
@@ -134,13 +122,5 @@ function subjectSummary(questions: WorkspaceQuestion[]) {
   for (const question of questions) {
     counts.set(question.subjectLabel, (counts.get(question.subjectLabel) || 0) + 1);
   }
-  return [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 8);
-}
-
-function Badge({ children, muted = false }: { children: React.ReactNode; muted?: boolean }) {
-  return (
-    <span className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[11px] mono-stat ${muted ? "border-terminal text-muted" : "border-accent text-accent bg-accent-dim"}`}>
-      {children}
-    </span>
-  );
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 6);
 }

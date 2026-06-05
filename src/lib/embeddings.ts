@@ -5,6 +5,7 @@ const EMBED_DIMENSIONS = Number.parseInt(getEnv("OPENAI_EMBEDDING_DIMENSIONS", "
 const OPENAI_API_KEY = getEnv("OPENAI_API_KEY");
 const OPENAI_BASE_URL = getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
 const OPENAI_EMBEDDING_MODEL = getEnv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small");
+const ENABLE_LOCAL_EMBEDDINGS = getEnv("ENABLE_LOCAL_EMBEDDINGS") === "true";
 
 type Extractor = (input: string | string[], options?: Record<string, unknown>) => Promise<{
   tolist: () => number[] | number[][];
@@ -14,7 +15,7 @@ let extractorPromise: Promise<Extractor> | null = null;
 const queryCache = new Map<string, number[]>();
 
 export function hasEmbeddingApi() {
-  return true;
+  return Boolean(OPENAI_API_KEY || ENABLE_LOCAL_EMBEDDINGS);
 }
 
 export async function embedText(text: string) {
@@ -31,12 +32,10 @@ export async function embedTexts(texts: string[]) {
   if (!inputs.length) return [];
 
   if (OPENAI_API_KEY) {
-    try {
-      return await embedTextsViaOpenAi(inputs);
-    } catch {
-      // Fall back to the local model if the configured key or endpoint is unavailable.
-    }
+    return await embedTextsViaOpenAi(inputs);
   }
+
+  if (!ENABLE_LOCAL_EMBEDDINGS) return [];
 
   const extractor = await getExtractor();
   const output = await extractor(inputs, {

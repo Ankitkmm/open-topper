@@ -1,22 +1,24 @@
 import Link from "next/link";
-import { FileQuestion, ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileQuestion } from "lucide-react";
 
 export default function NotFound() {
-  const C = { bg: "#050C09", text: "#E8EDEA", textSecondary: "#687D70", accent: "#4A7C59" };
-
   return (
-    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: C.bg }}>
-      <div className="text-center max-w-md">
-        <FileQuestion size={64} className="mx-auto mb-6" style={{ color: "rgba(104,125,112,0.15)" }} />
-        <h1 className="text-3xl font-bold mb-3" style={{ color: C.text }}>Page not found</h1>
-        <p className="text-sm mb-8 leading-relaxed" style={{ color: C.textSecondary }}>
-          The page you are looking for does not exist or has been moved.
+    <main className="library-page flex min-h-screen items-center justify-center px-6">
+      <div className="max-w-md text-center">
+        <FileQuestion size={56} className="mx-auto mb-6 text-muted" aria-hidden="true" />
+        <h1 className="text-3xl tracking-[-0.02em]">Page not found</h1>
+        <p className="mt-3 text-sm leading-7 text-secondary">
+          The page you are looking for does not exist or has moved.
         </p>
-        <div className="flex items-center justify-center gap-3">
-          <Link href="/" className="btn-secondary"><ArrowLeft size={15} /> Home</Link>
-          <Link href="/browse" className="btn-primary">Browse Questions</Link>
+        <div className="mt-8 flex items-center justify-center gap-3">
+          <Link href="/" className="btn-secondary">
+            <ArrowLeft size={15} aria-hidden="true" /> Home
+          </Link>
+          <Link href="/browse" className="btn-primary">
+            Search questions
+          </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

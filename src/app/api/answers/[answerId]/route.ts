@@ -1,26 +1,36 @@
+import { NextRequest } from "next/server";
 import { getAnswerDetail } from "@/lib/db-search";
+import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { PRIVATE_JSON_HEADERS, requireSessionResponseIfConfigured } from "@/lib/session-access";
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ answerId: string }> },
 ) {
-  const { answerId } = await params;
-  const record = await getAnswerDetail(answerId);
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
 
-  if (!record) {
-    return Response.json({ error: "Answer not found." }, {
-      status: 404,
+  const limitState = await checkRateLimit(req, {
+    scope: "answers-detail",
+    max: getSearchRateLimitMax(),
+    windowMs: getRateLimitWindowMs(),
+  });
+  if (!limitState.ok) {
+    return Response.json({ error: "Too many requests. Please slow down." }, {
+      status: 429,
       headers: {
-        "Cache-Control": "private, no-store",
-        "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet, noimageindex",
+        ...PRIVATE_JSON_HEADERS,
+        "Retry-After": String(Math.max(1, Math.ceil((limitState.resetAt - Date.now()) / 1000))),
       },
     });
   }
 
-  return Response.json(record, {
-    headers: {
-      "Cache-Control": "private, no-store",
-      "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet, noimageindex",
-    },
-  });
+  const { answerId } = await params;
+  const record = await getAnswerDetail(answerId);
+  if (!record) {
+    return Response.json({ error: "Answer not found." }, { status: 404, headers: PRIVATE_JSON_HEADERS });
+  }
+
+  return Response.json(record, { headers: PRIVATE_JSON_HEADERS });
 }

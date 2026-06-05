@@ -17,7 +17,7 @@ const securityHeaders = [
       "frame-src 'self' https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev https://*.r2.dev https://*.r2.cloudflarestorage.com",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "connect-src 'self' https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev https://*.r2.dev https://*.r2.cloudflarestorage.com",
+      "connect-src 'self' https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev https://*.r2.dev https://*.r2.cloudflarestorage.com https://*.supabase.co wss://*.supabase.co",
       "form-action 'self'",
     ].join("; "),
   },
@@ -56,6 +56,32 @@ const pdfProxyHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  allowedDevOrigins: ["127.0.0.1"],
+  outputFileTracingIncludes: {
+    "/api/answer-source": [
+      "data/pdf-runtime/answer-sources.json",
+      "data/pdf-runtime/pdf-r2-map.json",
+    ],
+    "/api/answer-source/\\[answerId\\]": [
+      "data/pdf-runtime/answer-sources.json",
+      "data/pdf-runtime/pdf-r2-map.json",
+    ],
+    "/pdf/\\[answerId\\]": [
+      "data/pdf-runtime/answer-sources.json",
+      "data/pdf-runtime/pdf-r2-map.json",
+    ],
+  },
+  outputFileTracingExcludes: {
+    "/api/answer-source": [
+      "data/app/**/*",
+    ],
+    "/api/answer-source/\\[answerId\\]": [
+      "data/app/**/*",
+    ],
+    "/pdf/\\[answerId\\]": [
+      "data/app/**/*",
+    ],
+  },
   async headers() {
     return [
       {

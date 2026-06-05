@@ -1,86 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { Check, Circle, FileCheck2, PenLine, StickyNote } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 import { useUserData } from "@/components/auth/UserDataProvider";
-import {
-  EMPTY_PROGRESS,
-  PROGRESS_EVENT,
-  type ProgressKey,
-  type ProgressMap,
-  readProgressMapForScope,
-  writeProgressMapForScope,
-} from "@/lib/local-user-store";
+import { EMPTY_PROGRESS } from "@/lib/local-user-store";
 
 interface ProgressToggleProps {
-  questionId: string;
+  itemId: string;
 }
 
-export function ProgressToggle({ questionId }: ProgressToggleProps) {
-  const { trackActivity, userScope } = useUserData();
-  const [progressMap, setProgressMap] = useState<ProgressMap>({});
+export function ProgressToggle({ itemId }: ProgressToggleProps) {
+  const { progressMap, toggleProgress } = useUserData();
+  const progress = progressMap[itemId] || EMPTY_PROGRESS;
 
-  useEffect(() => {
-    const update = () => {
-      setProgressMap(readProgressMapForScope(userScope));
-    };
-
-    update();
-    window.addEventListener(PROGRESS_EVENT, update);
-    window.addEventListener("storage", update);
-    return () => {
-      window.removeEventListener(PROGRESS_EVENT, update);
-      window.removeEventListener("storage", update);
-    };
-  }, [userScope]);
-
-  const progress = useMemo(() => progressMap[questionId] || EMPTY_PROGRESS, [progressMap, questionId]);
-
-  function toggle(key: ProgressKey) {
-    const current = progressMap[questionId] || EMPTY_PROGRESS;
-    const nextRecord = { ...current, [key]: !current[key] };
-    if (key === "full" && !current.full) {
-      nextRecord.done = true;
-      nextRecord.notes = true;
-      nextRecord.answer = true;
-    }
-    const next = { ...progressMap, [questionId]: nextRecord };
-    writeProgressMapForScope(userScope, next);
-    trackActivity(key === "full" ? 2 : 1);
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-1.5 sm:w-44" aria-label="Progress states">
-      <ProgressButton label="Done" active={progress.done} onClick={() => toggle("done")} icon={progress.done ? <Check size={13} /> : <Circle size={13} />} />
-      <ProgressButton label="Notes" active={progress.notes} onClick={() => toggle("notes")} icon={<StickyNote size={13} />} />
-      <ProgressButton label="Answer" active={progress.answer} onClick={() => toggle("answer")} icon={<PenLine size={13} />} />
-      <ProgressButton label="Full" active={progress.full} onClick={() => toggle("full")} icon={<FileCheck2 size={13} />} />
-    </div>
-  );
-}
-
-function ProgressButton({
-  label,
-  active,
-  icon,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  icon: ReactNode;
-  onClick: () => void;
-}) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="soft-button min-h-8 px-2 py-1 text-[11px]"
-      data-variant={active ? "primary" : "secondary"}
-      title={label}
+      onClick={() => toggleProgress(itemId)}
+      className="soft-button min-h-8 px-2.5 py-1 text-[11px]"
+      data-variant={progress.done ? "primary" : "secondary"}
+      title={progress.done ? "Marked done" : "Mark done"}
+      aria-pressed={progress.done}
     >
-      {icon}
-      {label}
+      {progress.done ? <Check size={13} /> : <Circle size={13} />}
+      Done
     </button>
   );
 }

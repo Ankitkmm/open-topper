@@ -1,12 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Check, Moon, Palette, Sprout, Sun, Waves } from "lucide-react";
+import { Check, Gem, Moon, Palette, Sprout, Sun, Waves } from "lucide-react";
 
 const THEMES = [
   { id: "library", label: "Library", icon: Sun },
   { id: "sage", label: "Sage", icon: Sprout },
   { id: "sepia", label: "Sepia", icon: Waves },
+  { id: "amethyst", label: "Purple", icon: Gem },
   { id: "night", label: "Night", icon: Moon },
 ] as const;
 

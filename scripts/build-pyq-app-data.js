@@ -19,6 +19,9 @@ const BAD_NAME_TOKENS = new Set([
   "answer", "answers", "toppers", "topper", "visionias", "vision", "upsc", "mains", "pdf",
   "unknown", "history", "geography", "sociology", "anthropology", "polity", "economy", "ethics",
   "essay", "optional", "gs", "socio", "op", "ta",
+  "public", "administration", "scorer", "pratham", "famous", "more", "web", "verifiedpdfurl",
+  "modern", "ancient", "medieval", "world", "india", "and", "course", "programme", "program",
+  "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
 ]);
 
 const CURATED_TOPPER_RANKS = [
@@ -73,7 +76,8 @@ function normalizeNameKey(value) {
 function isPlausibleRankName(value) {
   const key = normalizeNameKey(value);
   const words = key.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > 4) return false;
+  if (words.length < 1 || words.length > 4) return false;
+  if (words.length === 1 && words[0].length < 4) return false;
   return !words.some((word) => BAD_NAME_TOKENS.has(word));
 }
 
@@ -101,9 +105,11 @@ function cleanDisplayName(value, fallback = null) {
   let name = cleanStudyText(value)
     .replace(/\bair\s*\d+\b/gi, " ")
     .replace(/\brank\s*\d+\b/gi, " ")
-    .replace(/\b(?:test|copy|booklet|paper|answer|topper|toppers|visionias|vision\s+ias|levelupias|forumias|vajiram|mgp|awfg|optional|socio|op|ta)\b/gi, " ")
+    .replace(/\b[a-z]\s*\d{1,3}\b/gi, " ")
+    .replace(/\b(?:test|copy|booklet|paper|answer|topper|toppers|visionias|vision\s+ias|levelupias|forumias|vajiram|mgp|awfg|optional|socio|op|ta|modern|ancient|medieval|world|history|india|and)\b/gi, " ")
     .replace(/[_-]+/g, " ")
     .replace(/[^A-Za-z .'-]/g, " ")
+    .replace(/\b[A-Za-z]\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
@@ -116,15 +122,20 @@ function cleanDisplayName(value, fallback = null) {
 function extractDisplayNameFromFilename(value) {
   const base = cleanPdfFilename(value).replace(/\.pdf$/i, "");
   const clean = base
+    .replace(/\b\d{10,}\b/g, " ")
     .replace(/\bair\s*\d+\b/gi, " ")
     .replace(/\brank\s*\d+\b/gi, " ")
-    .replace(/\b(?:20\d{2}|17\d{8,}|18\d{8,}|drive|upsc|ias|cse|mains|sample|copy|test|series|booklet|paper|sectional|comprehensive|mock|visionias|vision|next|levelupias|forumias|vajiram|mgp|awfg|abhyaas|evaluated|rank|air|topper|toppers|unknown|gs|essay|ethics|optional|socio|op|ta|geography|sociology|anthro|anthropology|history|polity|economy)\b/gi, " ")
+    .replace(/\br\s*\d{1,4}\b/gi, " ")
+    .replace(/\bt\s*\d{1,2}\b/gi, " ")
+    .replace(/\b[a-z]\s*\d{1,3}\b/gi, " ")
+    .replace(/\b(?:20\d{2}|17\d{8,}|18\d{8,}|drive|upsc|ias|cse|mains|sample|copy|test|series|booklet|paper|sectional|comprehensive|mock|visionias|vision|next|levelupias|forumias|vajiram|mgp|awfg|abhyaas|abhyas|evaluated|rank|air|topper|toppers|unknown|gs|essay|ethics|optional|socio|op|ta|geography|sociology|anthro|anthropology|history|polity|economy|modern|ancient|medieval|world|india|public|administration|top|scorer|pratham|part|famous|more|course|crash|programme|program|foundation|score|marks?|web|verifiedpdfurl|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi, " ")
+    .replace(/\b[a-z]\b/gi, " ")
     .replace(/\b\d+(?:st|nd|rd|th)?\b/gi, " ")
     .replace(/[^A-Za-z .'-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length >= 2 && words.length <= 4 && clean.length >= 5 && !words.some((word) => BAD_NAME_TOKENS.has(word.toLowerCase()))) return titleCase(clean);
+  if (words.length >= 1 && words.length <= 4 && clean.length >= 4 && !words.some((word) => BAD_NAME_TOKENS.has(word.toLowerCase()))) return titleCase(clean);
   return null;
 }
 
@@ -510,11 +521,11 @@ function resolveSourceUrl(answer, r2Map) {
   if (isR2Url(sourceUrl)) {
     return { url: sourceUrl, linkSource: "r2-cdn" };
   }
-  if (isDirectPdfUrl(sourceUrl)) {
-    return { url: sourceUrl, linkSource: "direct-pdf" };
-  }
   const driveId = driveIdFromUrl(sourceUrl);
   if (driveId && r2Map[driveId]) return { url: r2Map[driveId], linkSource: "r2-cdn" };
+  if (isDirectPdfUrl(sourceUrl)) {
+    return { url: null, linkSource: "quarantined-external-pdf" };
+  }
   return { url: null, linkSource: "not-uploaded" };
 }
 
@@ -522,7 +533,6 @@ function sourceQuality(answer, r2Map) {
   const resolved = resolveSourceUrl(answer, r2Map);
   if (resolved.url?.includes(".r2.dev")) return 3;
   if (resolved.url?.includes(".r2.cloudflarestorage.com")) return 3;
-  if (isDirectPdfUrl(resolved.url || "")) return 2;
   return 0;
 }
 
