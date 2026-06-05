@@ -2,11 +2,13 @@ import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import type { Database } from "@/utils/supabase/schema";
 
+const AUTH_COOKIE_PATTERN = /^sb-.*-auth-token(?:\.\d+)?$/;
+
 export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  if (!url || !key) {
+  if (!url || !key || !hasSupabaseAuthCookie(request)) {
     return NextResponse.next({ request });
   }
 
@@ -31,4 +33,8 @@ export async function updateSession(request: NextRequest) {
 
   await supabase.auth.getUser();
   return supabaseResponse;
+}
+
+function hasSupabaseAuthCookie(request: NextRequest) {
+  return request.cookies.getAll().some(({ name }) => AUTH_COOKIE_PATTERN.test(name));
 }

@@ -68,6 +68,11 @@ export async function getSubjectPyqShells(
   return questions.map(toQuestionShell);
 }
 
+export function getWorkspaceQuestionShellById(questionId: string) {
+  const question = getWorkspaceQuestionById(questionId);
+  return question ? toQuestionShell(question) : null;
+}
+
 export async function getSubjectSyllabusNodes(subjectKey: SubjectKey): Promise<WorkspaceSyllabusNode[]> {
   return getWorkspaceSyllabusNodes(subjectKey);
 }

@@ -1,31 +1,48 @@
 import type { Metadata } from "next";
-import { SubjectWorkspace } from "@/components/SubjectWorkspace";
-import { getSubjectPageMeta, getSubjectPyqShells, getSubjectSyllabusNodes } from "@/lib/pyq";
-import { makeProgressItemId } from "@/lib/progress-items";
+import { Suspense } from "react";
+import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
+import { SubjectWorkspace, SubjectWorkspaceFallback } from "@/components/SubjectWorkspace";
+import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/pyq";
+import { getInitialWorkspaceSubjectShells, getSubjectProgressQuestionIds } from "@/lib/static-shell-data";
 
 export const metadata: Metadata = {
   title: "Geography Optional - UPSCat",
   description: "Geography optional PYQs arranged by the syllabus.",
 };
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string; syllabus?: string }> }) {
-  const params = await searchParams;
+export default async function Page() {
   const subject = getSubjectPageMeta("geography");
-  const cards = await getSubjectPyqShells("geography", params.q || "", 1000, params.syllabus || "");
-  const progressQuestionIds = (await getSubjectPyqShells("geography", "", 5000, "")).map((question) => makeProgressItemId("pyq", question.id));
+  const questions = await getInitialWorkspaceSubjectShells("geography");
+  const progressQuestionIds = getSubjectProgressQuestionIds("geography");
   const syllabusNodes = await getSubjectSyllabusNodes("geography");
 
   return (
-    <SubjectWorkspace
-      subjectKey="geography"
-      title={subject.title}
-      description={subject.description}
-      questions={cards}
-      syllabusNodes={syllabusNodes}
-      query={params.q || ""}
-      selectedSyllabusId={params.syllabus || ""}
-      progressQuestionIds={progressQuestionIds}
-      baseHref={subject.href}
-    />
+    <AuthProviderBoundary>
+      <Suspense
+        fallback={
+          <SubjectWorkspaceFallback
+            subjectKey="geography"
+            title={subject.title}
+            description={subject.description}
+            questions={questions}
+            syllabusNodes={syllabusNodes}
+            query=""
+            selectedSyllabusId=""
+            progressQuestionIds={progressQuestionIds}
+            baseHref={subject.href}
+          />
+        }
+      >
+        <SubjectWorkspace
+          subjectKey="geography"
+          title={subject.title}
+          description={subject.description}
+          questions={questions}
+          syllabusNodes={syllabusNodes}
+          progressQuestionIds={progressQuestionIds}
+          baseHref={subject.href}
+        />
+      </Suspense>
+    </AuthProviderBoundary>
   );
 }

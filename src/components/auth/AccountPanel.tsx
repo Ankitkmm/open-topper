@@ -1,12 +1,47 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
 import { LogIn, LogOut, UserPlus } from "lucide-react";
-import { useUserData } from "@/components/auth/UserDataProvider";
+import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
+import { useOptionalUserData } from "@/components/auth/UserDataProvider";
 
-export function AccountPanel({ next = "/" }: { next?: string }) {
-  const { authAvailable, isAuthenticated, status, userEmail, userName } = useUserData();
+export function AccountPanel({ next }: { next?: string }) {
+  if (typeof next === "string") {
+    return <AccountPanelResolved next={next} />;
+  }
+
+  return <AccountPanelWithSearchParams />;
+}
+
+function AccountPanelWithSearchParams() {
+  const searchParams = useSearchParams();
+  return <AccountPanelResolved next={searchParams.get("next") ?? "/"} />;
+}
+
+function AccountPanelResolved({ next }: { next: string }) {
+  const userData = useOptionalUserData();
+
+  if (!userData) {
+    return (
+      <AuthProviderBoundary>
+        <AccountPanelResolved next={next} />
+      </AuthProviderBoundary>
+    );
+  }
+
+  return <AccountPanelContent next={next} userData={userData} />;
+}
+
+function AccountPanelContent({
+  next,
+  userData,
+}: {
+  next: string;
+  userData: NonNullable<ReturnType<typeof useOptionalUserData>>;
+}) {
+  const { authAvailable, isAuthenticated, status, userEmail, userName } = userData;
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [signupEmail, setSignupEmail] = useState("");

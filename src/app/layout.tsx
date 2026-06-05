@@ -2,7 +2,6 @@ import { IBM_Plex_Mono, Inter, Newsreader } from "next/font/google";
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
-import { isSupabaseEmailAuthConfigured } from "@/lib/env";
 import { SITE_NAME } from "@/lib/marketing";
 
 export const metadata: Metadata = {
@@ -43,8 +42,6 @@ const ibmPlexMono = IBM_Plex_Mono({
   weight: ["400", "500", "600"],
 });
 
-const authAvailable = isSupabaseEmailAuthConfigured();
-
 export default function RootLayout({
   children,
 }: {
@@ -58,7 +55,7 @@ export default function RootLayout({
       className={`${inter.variable} ${newsreader.variable} ${ibmPlexMono.variable}`}
     >
       <body suppressHydrationWarning>
-        <AppShell authAvailable={authAvailable}>{children}</AppShell>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

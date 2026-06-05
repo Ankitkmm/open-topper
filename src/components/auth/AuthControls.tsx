@@ -2,10 +2,21 @@
 
 import Link from "next/link";
 import { LogIn, LogOut } from "lucide-react";
-import { useUserData } from "@/components/auth/UserDataProvider";
+import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
+import { useOptionalUserData } from "@/components/auth/UserDataProvider";
 
 export function AuthControls({ compact = false }: { compact?: boolean }) {
-  const { authAvailable, isAuthenticated, status, userEmail, userName } = useUserData();
+  const userData = useOptionalUserData();
+
+  if (!userData) {
+    return (
+      <AuthProviderBoundary>
+        <AuthControls compact={compact} />
+      </AuthProviderBoundary>
+    );
+  }
+
+  const { authAvailable, isAuthenticated, status, userEmail, userName } = userData;
 
   if (!authAvailable) return null;
 

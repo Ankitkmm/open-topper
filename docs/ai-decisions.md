@@ -37,3 +37,6 @@
 - 2026-06-05: Runtime PDF/source datasets are hardened to R2-only URLs. Non-R2 direct PDF sources are quarantined at build time and are not exposed to the viewer.
 - 2026-06-05: Unused/internal content APIs (`/api/questions*`, `/api/answers*`, `/api/internal/*`) are auth-gated when Supabase auth is configured to reduce scrapeable surface.
 - 2026-06-05: `scripts/sync-pdf-runtime-data.js` must fall back to committed `data/pdf-runtime/*` files when private `data/app/*` runtime sources are absent in CI/deploy builds (for example Vercel with ignored private files).
+- 2026-06-06: Public browse/study routes are prerendered as static shells; query-driven result loading moved to client-side `/api/search` fetches so the app fits Vercel free-tier function limits without changing user-facing URLs.
+- 2026-06-06: Auth/session refresh no longer runs on all requests. Proxy/middleware is restricted to account, auth, progress, PDF token, and PDF viewer routes, and skips Supabase refresh entirely when auth cookies are absent.
+- 2026-06-06: Unused public/internal APIs were deleted from deployment (`/api/questions*`, `/api/answers/[answerId]`, `/api/internal/*`, `/api/subjects/*/syllabus`, `/api/themes`, `/api/summary`, `/api/vault/search`) to keep the server entrypoint count within Vercel free-tier limits.

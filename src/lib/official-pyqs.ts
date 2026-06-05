@@ -84,6 +84,11 @@ export function getOfficialQuestionDetail(questionId: string) {
   return row ? toOfficialCard(row) : null;
 }
 
+export function getOfficialQuestionShell(questionId: string) {
+  const row = loadOfficialRows().find((item) => item.id === questionId);
+  return row ? toOfficialShell(row) : null;
+}
+
 export function getOfficialBrowsePyqs(
   query = "",
   category = "",

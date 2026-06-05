@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { BrowsePageClient } from "@/components/BrowsePageClient";
 import { OfficialQuestionCards } from "@/components/OfficialQuestionCards";
-import { searchOfficialBrowsePyqs } from "@/lib/official-pyqs";
+import { getInitialOfficialBrowseShells } from "@/lib/static-shell-data";
 
 export const metadata: Metadata = {
   title: "Browse All Questions - UPSCat",
@@ -8,27 +10,20 @@ export const metadata: Metadata = {
     "Browse all UPSC PYQs with hybrid search and subject-first navigation.",
 };
 
-export default async function BrowsePage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    q?: string;
-    category?: string;
-  }>;
-}) {
-  const params = await searchParams;
-  const search = params.q || "";
-  const category = params.category || null;
-  const questions = await searchOfficialBrowsePyqs(search, category || "", 240);
+export default function BrowsePage() {
+  const questions = getInitialOfficialBrowseShells();
 
   return (
-    <OfficialQuestionCards
-      questions={questions}
-      totalFiltered={questions.length}
-      searchParams={{
-        q: search,
-        category: category || "",
-      }}
-    />
+    <Suspense
+      fallback={(
+        <OfficialQuestionCards
+          questions={questions}
+          totalFiltered={questions.length}
+          searchParams={{ q: "", category: "" }}
+        />
+      )}
+    >
+      <BrowsePageClient initialQuestions={questions} />
+    </Suspense>
   );
 }

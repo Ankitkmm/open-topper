@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ExternalLink, Loader2, Search, Sparkles } from "lucide-react";
 import { useUserData } from "@/components/auth/UserDataProvider";
 import { StudyNav } from "@/components/StudyNav";
@@ -24,16 +24,35 @@ interface SubjectWorkspaceProps {
   baseHref: string;
 }
 
-export function SubjectWorkspace({
+export function SubjectWorkspace(props: SubjectWorkspaceProps) {
+  const searchParams = useSearchParams();
+
+  return (
+    <SubjectWorkspaceView
+      {...props}
+      live
+      query={searchParams.get("q") || ""}
+      selectedSyllabusId={searchParams.get("syllabus") || ""}
+    />
+  );
+}
+
+export function SubjectWorkspaceFallback(props: SubjectWorkspaceProps) {
+  return <SubjectWorkspaceView {...props} live={false} />;
+}
+
+function SubjectWorkspaceView({
+  subjectKey,
   title,
   description,
-  questions,
+  questions: initialQuestions,
   syllabusNodes,
   query = "",
   selectedSyllabusId = "",
   progressQuestionIds,
   baseHref,
-}: SubjectWorkspaceProps) {
+  live,
+}: SubjectWorkspaceProps & { live: boolean }) {
   const router = useRouter();
   const { authAvailable, isAuthenticated, progressMap, trackActivity } = useUserData();
   const [isPending, startTransition] = useTransition();
@@ -44,6 +63,10 @@ export function SubjectWorkspace({
   const [openSummaries, setOpenSummaries] = useState<Set<string>>(new Set());
   const [loadingAnswer, setLoadingAnswer] = useState<string | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
+  const [resultsError, setResultsError] = useState<string | null>(null);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [visibleQuestions, setVisibleQuestions] = useState<WorkspaceQuestion[]>(() => filterWorkspaceQuestions(initialQuestions, ""));
+  const [draftQuery, setDraftQuery] = useState(query);
   const activeTopicRef = useRef<HTMLButtonElement | null>(null);
 
   const groupNodes = useMemo(
@@ -55,8 +78,8 @@ export function SubjectWorkspace({
     [syllabusNodes],
   );
   const topperCount = useMemo(
-    () => questions.reduce((sum, question) => sum + question.topperCount, 0),
-    [questions],
+    () => visibleQuestions.reduce((sum, question) => sum + question.topperCount, 0),
+    [visibleQuestions],
   );
   const activeGroupId = useMemo(() => {
     if (!selectedSyllabusId) return null;
@@ -66,6 +89,54 @@ export function SubjectWorkspace({
   useEffect(() => {
     activeTopicRef.current?.scrollIntoView({ block: "nearest" });
   }, [selectedSyllabusId]);
+
+  useEffect(() => {
+    setDraftQuery(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (!live) {
+      setVisibleQuestions(filterWorkspaceQuestions(initialQuestions, selectedSyllabusId));
+      return;
+    }
+
+    if (!query.trim() && !selectedSyllabusId) {
+      setResultsError(null);
+      setIsLoadingResults(false);
+      setVisibleQuestions(initialQuestions);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({ dataset: "workspace", subject: subjectKey, limit: "1000" });
+    if (query.trim()) params.set("q", query.trim());
+    if (selectedSyllabusId) params.set("syllabusId", selectedSyllabusId);
+
+    setIsLoadingResults(true);
+    setResultsError(null);
+
+    void fetch(`/api/search?${params.toString()}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(payload?.error || "Search results could not be loaded.");
+        }
+        setVisibleQuestions(Array.isArray(payload?.results) ? (payload.results as WorkspaceQuestion[]) : []);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setResultsError(error instanceof Error ? error.message : "Search results could not be loaded.");
+        setVisibleQuestions(filterWorkspaceQuestions(initialQuestions, selectedSyllabusId));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoadingResults(false);
+      });
+
+    return () => controller.abort();
+  }, [initialQuestions, live, query, selectedSyllabusId, subjectKey]);
 
   const redirectToSignIn = useCallback(() => {
     const next = typeof window !== "undefined"
@@ -172,11 +243,12 @@ export function SubjectWorkspace({
   const activeSyllabusLabel = selectedSyllabusId
     ? topicNodes.find((node) => node.id === selectedSyllabusId)?.label
     : null;
+  const pending = isPending || isLoadingResults;
 
   return (
     <main className="library-page min-h-screen">
       <StudyNav />
-      {isPending && <div className="route-progress" aria-hidden="true" />}
+      {pending && <div className="route-progress" aria-hidden="true" />}
 
       <section className="mx-auto max-w-7xl px-5 py-8 sm:px-8 lg:px-10">
         <div className="flex flex-wrap items-end justify-between gap-6">
@@ -185,14 +257,14 @@ export function SubjectWorkspace({
             <h1 className="text-3xl leading-tight tracking-[-0.02em] sm:text-4xl">{title}</h1>
             <p className="mt-3 max-w-3xl text-base leading-8 text-secondary">{description}</p>
             <p className="mt-3 text-sm text-muted">
-              <span className="mono-stat text-secondary">{questions.length.toLocaleString()}</span> questions
+              <span className="mono-stat text-secondary">{visibleQuestions.length.toLocaleString()}</span> questions
               {" · "}
               <span className="mono-stat text-secondary">{topperCount.toLocaleString()}</span> topper copies
               {activeSyllabusLabel ? <> · filtered to {activeSyllabusLabel}</> : null}
             </p>
           </div>
           <div className="w-full max-w-xs">
-            <SubjectProgress questionIds={progressQuestionIds || questions.map((question) => makeProgressItemId("pyq", question.id))} label="Overall progress" />
+            <SubjectProgress questionIds={progressQuestionIds || initialQuestions.map((question) => makeProgressItemId("pyq", question.id))} label="Overall progress" />
           </div>
         </div>
 
@@ -248,15 +320,15 @@ export function SubjectWorkspace({
               className="soft-panel p-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                const form = new FormData(event.currentTarget);
-                navigateTo(String(form.get("q") || ""), selectedSyllabusId);
+                navigateTo(draftQuery, selectedSyllabusId);
               }}
             >
               <div className="relative">
                 <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
                 <input
                   name="q"
-                  defaultValue={query}
+                  value={draftQuery}
+                  onChange={(event) => setDraftQuery(event.target.value)}
                   placeholder={`Search inside ${title}`}
                   className="soft-input h-12 w-full pl-11 pr-4 text-sm"
                 />
@@ -275,12 +347,13 @@ export function SubjectWorkspace({
               </p>
             </form>
 
+            {resultsError && <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary">{resultsError}</div>}
             {viewerError && (
               <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary">{viewerError}</div>
             )}
 
-            <div className={`mt-5 grid gap-4${isPending ? " is-pending" : ""}`} aria-busy={isPending}>
-              {questions.map((question, index) => {
+            <div className={`mt-5 grid gap-4${pending ? " is-pending" : ""}`} aria-busy={pending}>
+              {visibleQuestions.map((question, index) => {
                 const isOpen = openQuestions.has(question.id);
                 const isLoading = loadingQuestions.has(question.id);
                 const detail = detailsById.get(question.id) || question;
@@ -430,7 +503,7 @@ export function SubjectWorkspace({
               })}
             </div>
 
-            {questions.length === 0 && (
+            {visibleQuestions.length === 0 && (
               <div className="soft-panel-muted mt-5 px-6 py-20 text-center text-secondary">
                 No questions matched this topic and search.
               </div>
@@ -440,6 +513,11 @@ export function SubjectWorkspace({
       </section>
     </main>
   );
+}
+
+function filterWorkspaceQuestions(questions: WorkspaceQuestion[], syllabusNodeId: string) {
+  if (!syllabusNodeId) return questions;
+  return questions.filter((question) => question.syllabusNodeId === syllabusNodeId);
 }
 
 function isProgressDone(progressMap: Record<string, { done?: boolean }>, type: ProgressItemType, id: string) {

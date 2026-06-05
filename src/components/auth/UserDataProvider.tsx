@@ -35,21 +35,24 @@ export function UserDataProvider({
   authAvailable,
   children,
 }: {
-  authAvailable: boolean;
+  authAvailable?: boolean;
   children: React.ReactNode;
 }) {
+  const authEnabled = authAvailable ?? isClientAuthAvailable();
   const [authUser, setAuthUser] = useState<User | null>(null);
-  const [status, setStatus] = useState<UserDataContextValue["status"]>(authAvailable ? "loading" : "unauthenticated");
-  const userEmail = authUser?.email?.trim() || null;
-  const userName = (typeof authUser?.user_metadata?.full_name === "string" && authUser.user_metadata.full_name.trim())
-    || authUser?.email?.split("@")[0]
+  const [status, setStatus] = useState<UserDataContextValue["status"]>(authEnabled ? "loading" : "unauthenticated");
+  const resolvedAuthUser = authEnabled ? authUser : null;
+  const resolvedStatus = authEnabled ? status : "unauthenticated";
+  const userEmail = resolvedAuthUser?.email?.trim() || null;
+  const userName = (typeof resolvedAuthUser?.user_metadata?.full_name === "string" && resolvedAuthUser.user_metadata.full_name.trim())
+    || resolvedAuthUser?.email?.split("@")[0]
     || null;
   const userScope = normalizeScope(userEmail);
   const [activityMap, setActivityMap] = useState<ActivityMap>({});
   const [progressMap, setProgressMap] = useState<ProgressMap>({});
 
   useEffect(() => {
-    if (!authAvailable) return;
+    if (!authEnabled) return;
 
     const supabase = createClient();
     let active = true;
@@ -77,7 +80,7 @@ export function UserDataProvider({
       active = false;
       subscription.unsubscribe();
     };
-  }, [authAvailable]);
+  }, [authEnabled]);
 
   useEffect(() => {
     if (userScope !== "anon") {
@@ -103,7 +106,7 @@ export function UserDataProvider({
   }, [userScope]);
 
   useEffect(() => {
-    if (!authAvailable || status !== "authenticated" || !userEmail) return;
+    if (!authEnabled || resolvedStatus !== "authenticated" || !userEmail) return;
     let cancelled = false;
 
     async function syncRemoteProgress() {
@@ -127,14 +130,14 @@ export function UserDataProvider({
     return () => {
       cancelled = true;
     };
-  }, [authAvailable, status, userEmail, userScope]);
+  }, [authEnabled, resolvedStatus, userEmail, userScope]);
 
   const value = useMemo<UserDataContextValue>(
     () => ({
       activityMap,
-      authAvailable,
-      isAuthenticated: Boolean(authAvailable && status === "authenticated" && userEmail),
-      status,
+      authAvailable: authEnabled,
+      isAuthenticated: Boolean(authEnabled && resolvedStatus === "authenticated" && userEmail),
+      status: resolvedStatus,
       trackActivity(amount = 1) {
         trackActivityForScope(userScope, amount);
       },
@@ -146,7 +149,7 @@ export function UserDataProvider({
         setProgressMap(next);
         writeProgressMapForScope(userScope, next);
         trackActivityForScope(userScope);
-        if (authAvailable && status === "authenticated" && userEmail) {
+        if (authEnabled && resolvedStatus === "authenticated" && userEmail) {
           void persistProgressEntries(toProgressEntries({ [itemId]: nextRecord }, true));
         }
       },
@@ -154,7 +157,7 @@ export function UserDataProvider({
       userName,
       userScope,
     }),
-    [activityMap, authAvailable, progressMap, status, userEmail, userName, userScope],
+    [activityMap, authEnabled, progressMap, resolvedStatus, userEmail, userName, userScope],
   );
 
   return <UserDataContext.Provider value={value}>{children}</UserDataContext.Provider>;
@@ -224,4 +227,15 @@ export function useUserData() {
   const context = useContext(UserDataContext);
   if (!context) throw new Error("useUserData must be used within UserDataProvider");
   return context;
+}
+
+export function useOptionalUserData() {
+  return useContext(UserDataContext);
+}
+
+function isClientAuthAvailable() {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()),
+  );
 }
