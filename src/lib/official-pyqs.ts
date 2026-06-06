@@ -61,6 +61,15 @@ interface OfficialRowSearchRank {
   keywordTermHits: number;
 }
 
+interface OfficialTopicMatchRank {
+  hasFilter: boolean;
+  score: number;
+  exactPhraseHit: boolean;
+  allTermsMatched: boolean;
+  matchedTermCount: number;
+  meaningfulTermCount: number;
+}
+
 interface RelevantQuestionGroup {
   key: string;
   bestLink: OfficialAnswerLink;
@@ -68,30 +77,58 @@ interface RelevantQuestionGroup {
   topperCopies: NonNullable<SubjectPyqCard["relevantQuestions"]>[number]["topperCopies"];
 }
 
+const OFFICIAL_TOPIC_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "upsc",
+  "general",
+  "studies",
+  "paper",
+  "optional",
+  "topic",
+  "topics",
+  "section",
+  "part",
+]);
+
 export function getOfficialSubjectPyqs(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
-  const terms = searchTerms(query);
-  const syllabusTerms = searchTerms(syllabus);
-  return loadOfficialRows()
-    .filter((row) => row.subjectKey === subjectKey)
-    .filter((row) => matchesSyllabus(row, syllabusTerms))
-    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
-    .filter((entry) => entry.rank.score > 0)
-    .sort(compareOfficialRowSearchResults)
-    .slice(0, limit)
-    .map((entry) => toOfficialCard(entry.row));
+  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map((entry) => toOfficialCard(entry.row));
 }
 
 export function getOfficialSubjectPyqShells(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
+  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map((entry) => toOfficialShell(entry.row));
+}
+
+function getRankedOfficialSubjectRows(subjectKey: string, query = "", limit = 120, syllabus = "") {
   const terms = searchTerms(query);
-  const syllabusTerms = searchTerms(syllabus);
+  const normalizedSyllabus = cleanText(syllabus);
+  const hasTopicFilter = Boolean(normalizedSyllabus);
   return loadOfficialRows()
     .filter((row) => row.subjectKey === subjectKey)
-    .filter((row) => matchesSyllabus(row, syllabusTerms))
-    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
+    .map((row) => ({
+      row,
+      rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank(),
+      topicRank: hasTopicFilter ? rankOfficialTopicMatch(row, normalizedSyllabus) : defaultOfficialTopicMatchRank(),
+    }))
+    .filter((entry) => !hasTopicFilter || entry.topicRank.score > 0)
     .filter((entry) => entry.rank.score > 0)
-    .sort(compareOfficialRowSearchResults)
+    .sort((left, right) => hasTopicFilter
+      ? compareOfficialTopicFilteredResults(left, right)
+      : compareOfficialRowSearchResults(left, right))
     .slice(0, limit)
-    .map((entry) => toOfficialShell(entry.row));
 }
 
 export function getOfficialQuestionDetail(questionId: string) {
@@ -481,6 +518,17 @@ function defaultOfficialRowRank(): OfficialRowSearchRank {
   };
 }
 
+function defaultOfficialTopicMatchRank(): OfficialTopicMatchRank {
+  return {
+    hasFilter: false,
+    score: 0,
+    exactPhraseHit: false,
+    allTermsMatched: false,
+    matchedTermCount: 0,
+    meaningfulTermCount: 0,
+  };
+}
+
 function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): OfficialRowSearchRank {
   if (terms.length === 0) return defaultOfficialRowRank();
 
@@ -527,22 +575,98 @@ function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): Officia
   };
 }
 
+function rankOfficialTopicMatch(row: OfficialRow, syllabus = ""): OfficialTopicMatchRank {
+  const normalizedSyllabus = normalizeSearchText(syllabus);
+  const meaningfulTerms = meaningfulTopicTerms(syllabus);
+  if (!normalizedSyllabus && meaningfulTerms.length === 0) return defaultOfficialTopicMatchRank();
+
+  const topicFields = [...row.syllabusTags, ...row.keywords]
+    .map((value) => normalizeSearchText(value))
+    .filter(Boolean);
+  const topicFieldTermSet = new Set(
+    [...row.syllabusTags, ...row.keywords]
+      .flatMap((value) => meaningfulTopicTerms(value)),
+  );
+
+  if (!topicFields.length) {
+    return {
+      hasFilter: true,
+      score: 0,
+      exactPhraseHit: false,
+      allTermsMatched: false,
+      matchedTermCount: 0,
+      meaningfulTermCount: meaningfulTerms.length,
+    };
+  }
+
+  const exactPhraseHit = Boolean(normalizedSyllabus) && topicFields.some((value) => value.includes(normalizedSyllabus));
+  const matchedTerms = meaningfulTerms.filter((term) => topicFieldTermSet.has(term));
+  const matchedTermCount = matchedTerms.length;
+  const allTermsMatched = meaningfulTerms.length > 0 && matchedTermCount === meaningfulTerms.length;
+  const coverage = meaningfulTerms.length > 0 ? matchedTermCount / meaningfulTerms.length : 0;
+
+  return {
+    hasFilter: true,
+    score: exactPhraseHit
+      ? 4 + coverage
+      : allTermsMatched
+        ? 2 + coverage
+        : matchedTermCount > 0
+          ? 0.5 + coverage
+          : 0,
+    exactPhraseHit,
+    allTermsMatched,
+    matchedTermCount,
+    meaningfulTermCount: meaningfulTerms.length,
+  };
+}
+
 function compareOfficialRowSearchResults(
+  left: { row: OfficialRow; rank: OfficialRowSearchRank },
+  right: { row: OfficialRow; rank: OfficialRowSearchRank },
+) {
+  return compareOfficialRowSearchPriority(left, right)
+    || (right.row.year || 0) - (left.row.year || 0);
+}
+
+function compareOfficialRowSearchPriority(
   left: { row: OfficialRow; rank: OfficialRowSearchRank },
   right: { row: OfficialRow; rank: OfficialRowSearchRank },
 ) {
   return Number(right.rank.exactQuestionPhraseHit) - Number(left.rank.exactQuestionPhraseHit)
     || Number(right.rank.allTermsInQuestion) - Number(left.rank.allTermsInQuestion)
     || right.rank.questionTermHits - left.rank.questionTermHits
-    || right.rank.score - left.rank.score
+    || right.rank.score - left.rank.score;
+}
+
+function compareOfficialTopicFilteredResults(
+  left: { row: OfficialRow; rank: OfficialRowSearchRank; topicRank: OfficialTopicMatchRank },
+  right: { row: OfficialRow; rank: OfficialRowSearchRank; topicRank: OfficialTopicMatchRank },
+) {
+  return compareOfficialRowSearchPriority(left, right)
+    || Number(right.topicRank.exactPhraseHit) - Number(left.topicRank.exactPhraseHit)
+    || Number(right.topicRank.allTermsMatched) - Number(left.topicRank.allTermsMatched)
+    || right.topicRank.matchedTermCount - left.topicRank.matchedTermCount
+    || right.topicRank.score - left.topicRank.score
     || (right.row.year || 0) - (left.row.year || 0);
 }
 
-function matchesSyllabus(row: OfficialRow, terms: string[]) {
-  if (terms.length === 0) return true;
-  const haystack = [row.syllabusTags.join(" "), row.keywords.join(" ")].join(" ").toLowerCase();
-  const tokens = searchTokens(haystack);
-  return terms.some((term) => matchesSearchTerm(term, haystack, tokens));
+function meaningfulTopicTerms(value: string) {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return [];
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const term of searchTokens(normalized)) {
+    if (term.length <= 2) continue;
+    if (OFFICIAL_TOPIC_STOP_WORDS.has(term)) continue;
+    if (seen.has(term)) continue;
+    seen.add(term);
+    out.push(term);
+  }
+
+  return out;
 }
 
 function withQuestionMarks(question: string, marks: number | null) {
@@ -594,5 +718,8 @@ function slug(value: string) {
 export const __testUtils = {
   groupRelevantQuestions,
   rankOfficialRow,
+  rankOfficialTopicMatch,
+  meaningfulTopicTerms,
   compareOfficialRowSearchResults,
+  compareOfficialTopicFilteredResults,
 };

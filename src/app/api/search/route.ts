@@ -5,7 +5,7 @@ import {
   getOfficialQuestionShell,
   getOfficialSubjectPyqShells,
 } from "@/lib/official-pyqs";
-import { getWorkspaceQuestionById, searchWorkspaceQuestions } from "@/lib/question-bank-runtime";
+import { getWorkspaceNode, getWorkspaceQuestionById, searchWorkspaceQuestions } from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSubjectKeyFromValue, type SubjectKey } from "@/lib/subject-definitions";
 
@@ -68,9 +68,10 @@ async function searchOfficialShells(options: {
   }
 
   const category = options.subjectKey || options.subject.trim().toLowerCase();
+  const syllabus = resolveOfficialSyllabusFilter(options.subjectKey, options.syllabusId);
 
   if (options.subjectKey) {
-    return getOfficialSubjectPyqShells(options.subjectKey, options.query, options.limit, options.syllabusId);
+    return getOfficialSubjectPyqShells(options.subjectKey, options.query, options.limit, syllabus);
   }
 
   return getOfficialBrowsePyqs(options.query, category, "", options.limit);
@@ -100,4 +101,14 @@ async function searchWorkspaceShells(options: {
     linkedInsights: [],
     searchText: undefined,
   }));
+}
+
+export function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {
+  const value = syllabusId.trim();
+  if (!value) return "";
+  if (!subjectKey) return value;
+
+  const node = getWorkspaceNode(value);
+  if (!node || node.subjectKey !== subjectKey) return value;
+  return node.label || value;
 }

@@ -7,50 +7,64 @@ Last updated: 2026-06-06 · By: Codex
 
 ## Summary
 
-Implemented the search relevance ordering fix across both public search stacks:
+Implemented the official subject-page topic-filter fix for public GS/Essay pages:
 
-1. **Official PYQ search**
-   - Top-level official search is now relevance-first instead of letting shallow score ties fall through to year ordering too often.
-   - Strong/exact question-text matches get explicit priority over syllabus/keyword-only hits.
-   - Relevant-answer grouping now ranks each grouped question by its strongest link, not by whichever raw link happened to appear first.
+1. **Official syllabus filters now resolve node IDs correctly**
+   - `/api/search?dataset=official` now resolves `syllabusId` node IDs to their syllabus labels before calling official search helpers.
+   - This prevents official topic filtering from treating values like `gs1:topic:...` as fuzzy free text.
 
-2. **Workspace/question search**
-   - Removed `topperCount` from the primary text relevance score in both runtime and non-runtime workspace search.
-   - `topperCount` now acts only as a secondary tiebreak after textual relevance, so broader metadata matches no longer outrank exact question hits just because they have more linked copies.
+2. **Official selected-topic matching is no longer loose/fuzzy**
+   - Official subject-page topic filtering no longer passes rows through on generic/fuzzy slug terms.
+   - Filtering now uses meaningful topic-term overlap from syllabus labels against official `syllabusTags`/`keywords`.
+   - This fixes the GS1 “Role of women…” bug where unrelated Geography/History PYQs were surfacing in the selected-topic view.
 
-3. **Regression coverage**
-   - Added lightweight `node --import tsx --test` tests for official ranking, grouped relevant-question ordering, workspace relevance-first ranking, tie behavior, and runtime/non-runtime parity.
+3. **Selected-topic ordering is topic-first**
+   - When an official subject-page syllabus topic is selected, results are ordered by:
+     - normal query relevance first, if a search query is present
+     - then stronger topic match
+     - then year
+   - Non-topic official search behavior remains unchanged.
+
+4. **Regression coverage**
+   - Added focused official topic-filter tests for:
+     - label vs node-id behavior
+     - exclusion of unrelated climate/island-states PYQs
+     - inclusion of relevant women/population/poverty/urbanization PYQs
+     - stop-word handling
+     - selected-topic ordering
+     - no-syllabus regression safety
 
 ## Files changed by this pass
 
+- `src/app/api/search/route.ts`
 - `src/lib/official-pyqs.ts`
-- `src/lib/question-bank-runtime.ts`
-- `src/lib/question-bank.ts`
-- `src/lib/__tests__/official-pyqs-ranking.test.ts`
-- `src/lib/__tests__/workspace-ranking.test.ts`
+- `src/lib/__tests__/official-pyqs-syllabus-filter.test.ts`
 - `docs/ai-decisions.md`
 - `docs/ai-handoff.md`
 
 ## Verification
 
-- `node --import tsx --test src/lib/__tests__/official-pyqs-ranking.test.ts src/lib/__tests__/workspace-ranking.test.ts`
+- `node --import tsx --test src/lib/__tests__/official-pyqs-ranking.test.ts src/lib/__tests__/official-pyqs-syllabus-filter.test.ts src/lib/__tests__/workspace-ranking.test.ts`
 - `npm run lint`
-- `npx tsc --noEmit --pretty false`
-- `npm run build`
-- smoke queries via local server:
-  - `GET /api/search?dataset=official&q=carbon+capture+utilization+storage&subject=gs3` returns the CCUS PYQ first
-  - `GET /api/search?dataset=workspace&q=westphalia+nation+states+international+law&subject=gs2` returns the Westphalia question first
+- `npx tsc --noEmit --pretty false` *(still blocked by pre-existing `@vercel/analytics/next` missing-module error from `src/app/layout.tsx`)*
+- `npm run build` *(same pre-existing `@vercel/analytics/next` missing-module blocker)*
+- smoke checks via local helper execution:
+  - resolving the GS1 “Role of women…” node ID yields the full syllabus label
+  - selected-topic top results now show women/population/poverty/urbanization PYQs first
+  - the unrelated climate/island-states PYQ no longer appears in that selected-topic result set
+  - topic + query (`women`) keeps women-related PYQs at the top inside the selected topic
 
 ## Decisions
 
-- Public `/api/search` ranking is now explicitly relevance-first across official and workspace stacks.
-- Topper copy count and recency remain useful, but only as tiebreakers after text relevance.
+- Official subject-page syllabus filters should match on meaningful topic terms, not fuzzy slug tokens.
+- Selected-topic official result ordering should prioritize topic match over year once the filter is active.
 
 ## Blockers / remaining work
 
-- None at the code level.
+- No blocker for this fix itself.
+- Repo-wide typecheck/build still have a pre-existing missing dependency: `@vercel/analytics/next` imported from `src/app/layout.tsx`.
 - Do not stage unrelated untracked local artifacts in the repo root.
 
 ## Exact next step
 
-Stage only the ranking-fix files plus docs updates, commit on `main`, and push to `origin/main`.
+Stage only the official topic-filter files plus docs updates, commit on `main`, and push to `origin/main`.

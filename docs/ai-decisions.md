@@ -45,3 +45,4 @@
 - 2026-06-06: The dedicated `/pdf/[answerId]` viewer now uses a constrained internal scroll container with desktop book spreads, mobile single-column fallback, bounded lazy page rendering, and 75%–125% zoom (default 80%).
 - 2026-06-06: Auth is temporarily forced off in code for QA so public detail/PDF flows stay open without sign-in while token/origin/rate-limit protections remain in place.
 - 2026-06-06: Public `/api/search` ranking is relevance-first; exact/strong question-text matches outrank newer-year or higher-copy-count metadata, which now only breaks ties.
+- 2026-06-06: Official subject-page syllabus filters resolve node IDs to syllabus labels and use meaningful topic-term matching instead of fuzzy slug-token matching.
