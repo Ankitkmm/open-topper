@@ -4,6 +4,7 @@ import "./globals.css";
 import { AppShell } from "@/components/AppShell";
 import { SITE_NAME } from "@/lib/marketing";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://upscat.click"),
@@ -58,6 +59,7 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <AppShell>{children}</AppShell>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
