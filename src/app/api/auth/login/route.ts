@@ -7,7 +7,7 @@ import { createClient } from "@/utils/supabase/server";
 
 export async function POST(req: NextRequest) {
   if (!isEmailPasswordAuthConfigured()) {
-    return Response.json({ error: "Email auth is not configured." }, { status: 503, headers: PRIVATE_JSON_HEADERS });
+    return Response.json({ error: "Sign-in is temporarily disabled for QA." }, { status: 503, headers: PRIVATE_JSON_HEADERS });
   }
 
   const limit = await checkRateLimit(req, {

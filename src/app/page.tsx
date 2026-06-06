@@ -80,9 +80,6 @@ export default async function LandingPage() {
             A search engine over thousands of past year questions and the real topper copies that go
             with them. Type an idea — not just keywords — and start studying in seconds.
           </p>
-          <p className="animate-rise mx-auto mt-4 max-w-xl text-sm leading-7 text-muted" style={{ animationDelay: "150ms" }}>
-            PYQs stay public. Opening topper-copy details, summaries, and PDFs requires sign-in.
-          </p>
 
           <form action="/browse" className="animate-rise mx-auto mt-9 max-w-2xl" style={{ animationDelay: "180ms" }}>
             <div className="search-hero">
@@ -113,7 +110,7 @@ export default async function LandingPage() {
           </div>
 
           <div className="animate-rise mt-9 flex flex-wrap items-center justify-center gap-x-8 gap-y-3" style={{ animationDelay: "300ms" }}>
-            <Stat value={stats.totalQuestions.toLocaleString()} label="questions" />
+            <Stat value={stats.totalQuestions.toLocaleString()} label="keywords" />
             <Divider />
             <Stat value={stats.answerLinks.toLocaleString()} label="topper answer links" />
             <Divider />

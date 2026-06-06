@@ -280,20 +280,6 @@ function loadOfficialLinkDataset() {
   return cachedOfficialLinks;
 }
 
-function buildOfficialAnswerLookup() {
-  const lookup = new Map<string, Array<OfficialAnswerLink & { officialQuestionId: string }>>();
-  const links = loadOfficialLinkDataset().links || {};
-  for (const [officialQuestionId, rows] of Object.entries(links)) {
-    for (const row of rows) {
-      const item = { ...row, officialQuestionId };
-      const bucket = lookup.get(row.topperAnswerId) || [];
-      bucket.push(item);
-      lookup.set(row.topperAnswerId, bucket);
-    }
-  }
-  return lookup;
-}
-
 function parseGs123(): OfficialRow[] {
   const rows: OfficialRow[] = [];
   const file = join(PYQ_DIR, "UPSC GS1-GS3 PYQS, topics might be theirs, dont do a 100 match while….md");

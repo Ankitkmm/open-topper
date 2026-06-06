@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { isPublicAuthAvailable } from "@/lib/auth-availability";
 
 export const PRIVATE_JSON_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -6,10 +7,7 @@ export const PRIVATE_JSON_HEADERS = {
 };
 
 export function isEmailPasswordAuthConfigured() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL
-    && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  );
+  return isPublicAuthAvailable();
 }
 
 export async function getAuthenticatedUser() {

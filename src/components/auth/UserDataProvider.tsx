@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { isPublicAuthAvailable } from "@/lib/auth-availability";
 import type { ActivityMap, ProgressKey, ProgressMap } from "@/lib/local-user-store";
 import {
   ACTIVITY_EVENT,
@@ -38,7 +39,7 @@ export function UserDataProvider({
   authAvailable?: boolean;
   children: React.ReactNode;
 }) {
-  const authEnabled = authAvailable ?? isClientAuthAvailable();
+  const authEnabled = authAvailable ?? isPublicAuthAvailable();
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [status, setStatus] = useState<UserDataContextValue["status"]>(authEnabled ? "loading" : "unauthenticated");
   const resolvedAuthUser = authEnabled ? authUser : null;
@@ -231,11 +232,4 @@ export function useUserData() {
 
 export function useOptionalUserData() {
   return useContext(UserDataContext);
-}
-
-function isClientAuthAvailable() {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-    && (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()),
-  );
 }

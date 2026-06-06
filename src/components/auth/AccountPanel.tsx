@@ -121,7 +121,7 @@ function AccountPanelContent({
   if (!authAvailable) {
     return (
       <div className="soft-panel p-6 text-center text-secondary">
-        Email auth is not configured in this environment yet.
+        Sign-in is temporarily disabled for QA. Public browsing, topper details, summaries, and PDFs are currently open without an account.
       </div>
     );
   }

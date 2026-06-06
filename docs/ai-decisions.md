@@ -42,3 +42,5 @@
 - 2026-06-06: Unused public/internal APIs were deleted from deployment (`/api/questions*`, `/api/answers/[answerId]`, `/api/internal/*`, `/api/subjects/*/syllabus`, `/api/themes`, `/api/summary`, `/api/vault/search`) to keep the server entrypoint count within Vercel free-tier limits.
 - 2026-06-06: Public shell/runtime loaders were split from heavy search/build modules so Vercel functions trace only `workspace-index.json` and public official-link data instead of the full vault/raw-ingest dataset.
 - 2026-06-06: Deployed `/api/search` now uses lightweight lexical shell search for public browse/study shells; semantic/vault-backed fallback was removed from the deployed path to stay under Vercel’s 250 MB function limit.
+- 2026-06-06: The dedicated `/pdf/[answerId]` viewer now uses a constrained internal scroll container with desktop book spreads, mobile single-column fallback, bounded lazy page rendering, and 75%–125% zoom (default 80%).
+- 2026-06-06: Auth is temporarily forced off in code for QA so public detail/PDF flows stay open without sign-in while token/origin/rate-limit protections remain in place.

@@ -24,7 +24,7 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
           Find a PYQ first, then open relevant topper answers.
         </h1>
         <p className="workspace-disclaimer mt-4 max-w-3xl text-sm leading-7 text-secondary">
-          PYQ discovery stays public. Topper copies, summaries, and PDFs require sign-in.
+          PYQ discovery stays public. Topper copies, summaries, and PDFs are temporarily open for QA.
         </p>
 
         <form action="/browse" className="mt-7 flex flex-col gap-2 sm:flex-row">

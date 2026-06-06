@@ -7,78 +7,61 @@ Last updated: 2026-06-06 · By: Codex
 
 ## Summary
 
-Diagnosed and fixed the Vercel deploy blocker for commit `2f315c8` (`Refactor public shells for Vercel free`).
+Implemented two product changes on top of the pending PDF viewer work:
 
-Root cause was **function tracing bloat**, not the local folder move:
+1. **Temporary global auth-off mode for QA**
+   - Added a shared auth-availability helper that currently forces auth unavailable even when Supabase env vars are present.
+   - Public detail/PDF flows no longer require sign-in.
+   - PDF token verification, same-origin checks, rate limiting, and answer-id validation were left intact.
+   - Auth UI now disappears automatically, and `/account` shows QA-disabled messaging instead of sign-in copy.
 
-- `/api/search` traced ~**1.5 GB**
-- `/api/workspace-questions/[questionId]` traced ~**1.48 GB**
-- official/page shells also traced the vault/raw-ingest graph
+2. **Landing-page stat relabel**
+   - Changed the hero stat from `958 questions` to `958 keywords`.
+   - The `958` value is still derived from the existing official PYQ count; only the label changed.
 
-Main fixes shipped locally:
-
-- Split public runtime reads away from heavy build/search modules.
-- Added a lightweight `question-bank-runtime` module that only reads `data/app/workspace-index.json`.
-- Stopped public page/shell entrypoints from importing `pyq.ts` / `db-search.ts` transitively.
-- Removed db-backed/semantic fallback from deployed `/api/search`; public shell search is now lightweight lexical search over the prebuilt shell datasets.
-- Kept current public URLs and public shell UX intact.
-
-Post-fix local trace sizes are now:
-
-- `/api/search` → **135.2 MB**
-- `/api/workspace-questions/[questionId]` → **96.2 MB**
-- `/api/official-questions/[questionId]` → **41.2 MB**
-- `/` and `/browse` shell traces → **~135.5 MB**
-
-This is below Vercel’s 250 MB unzipped function limit.
+The previously pending scrollable PDF viewer work is still part of the local tracked diff and remains included.
 
 ## Files changed by this pass
 
-- `scripts/build-workspace-index.ts`
-- `src/app/api/search/route.ts`
-- `src/app/api/workspace-questions/[questionId]/route.ts`
+- `src/lib/auth-availability.ts`
+- `src/lib/session-access.ts`
+- `src/components/auth/UserDataProvider.tsx`
 - `src/app/page.tsx`
-- `src/app/essay/page.tsx`
-- `src/app/gs1/page.tsx`
-- `src/app/gs2/page.tsx`
-- `src/app/gs3/page.tsx`
-- `src/app/gs4/page.tsx`
-- `src/app/optional/anthropology/page.tsx`
-- `src/app/optional/geography/page.tsx`
-- `src/app/optional/history/page.tsx`
-- `src/app/optional/psir/page.tsx`
-- `src/app/optional/public-administration/page.tsx`
-- `src/app/optional/sociology/page.tsx`
-- `src/components/OfficialSubjectPageClient.tsx`
-- `src/components/OfficialSubjectWorkspace.tsx`
-- `src/components/QuestionCards.tsx`
-- `src/components/SubjectWorkspace.tsx`
+- `src/app/account/page.tsx`
+- `src/components/auth/AccountPanel.tsx`
+- `src/components/OfficialQuestionCards.tsx`
+- `src/app/api/auth/login/route.ts`
+- `src/app/api/auth/register/route.ts`
 - `src/lib/official-pyqs.ts`
-- `src/lib/shell-search.ts`
-- `src/lib/static-shell-data.ts`
-- `src/lib/build-workspace-index.ts`
-- `src/lib/question-bank-runtime.ts`
-- `src/lib/study-page-data.ts`
+- `src/components/PdfViewerPage.tsx`
 - `docs/ai-decisions.md`
 - `docs/ai-handoff.md`
 
 ## Verification
 
-- `npx tsc --noEmit --pretty false`
+- `npm run lint`
+- `npx tsc --noEmit --pretty false` *(passes after a build; before build, local `.next/types/validator.ts` briefly complained about missing `./routes.js`)*
 - `npm run build`
-- inspected `.next/server/app/**/*.nft.json` traced sizes after build
-- confirmed the oversized routes dropped from ~1.5 GB traces to 41–135 MB traces
+- local dev smoke checks via `curl`:
+  - `/` shows `keywords`
+  - `/account` shows QA-disabled text
+  - `POST /api/answer-source` returns a viewer token without sign-in
+  - `GET /api/workspace-questions/[questionId]` returns `200` without sign-in
+  - tokenized `/pdf/[answerId]?token=...` renders the PDF viewer page
+  - raw `/pdf/[answerId]` without token still fails with `Invalid token.`
 
 ## Decisions
 
-- Public shell search now prioritizes deployability over semantic ranking on the hosted free-tier path.
-- Runtime loaders must stay separate from raw rebuild/search modules to keep Vercel function bundles bounded.
+- QA auth disable is code-controlled and centralized, not env-unset only.
+- Public QA mode should keep PDF security controls except for session gating.
+- The landing hero keeps the derived `958` number and only relabels it to `keywords`.
 
 ## Blockers / remaining work
 
-- Local fix is complete, but it still must be committed/pushed so Vercel can redeploy `main`.
-- After push, Vercel production should be rechecked once the new deployment finishes.
+- None at the code level.
+- Local tracked changes still need to be staged, committed, and pushed to `origin/main`.
+- Do not include unrelated untracked local artifacts when staging.
 
 ## Exact next step
 
-Commit and push this trace-size fix to `main`, wait for Vercel to redeploy, then confirm `upscat.click` is serving the new build instead of the old `20e0632` production deploy.
+Stage only the intended tracked files, commit the QA-auth + landing-stat + PDF-viewer changes on `main`, and push to `origin/main`.
