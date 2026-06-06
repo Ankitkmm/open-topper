@@ -300,6 +300,11 @@ const TOKEN_CACHE = new Map<string, string[]>();
 const TEXT_MATCH_CACHE = new Map<string, number>();
 const QUESTION_SEARCH_TOKEN_CACHE = new Map<string, string[]>();
 
+export function __setWorkspaceIndexForTests(snapshot: WorkspaceSnapshot | null) {
+  QUESTION_SEARCH_TOKEN_CACHE.clear();
+  cachedIndex = snapshot ? hydrateWorkspaceIndex(snapshot) : null;
+}
+
 export function getWorkspaceIndex() {
   if (cachedIndex) return cachedIndex;
 
@@ -384,7 +389,7 @@ export function searchWorkspaceQuestions(options: {
   return matches
     .map((question) => ({ question, score: searchScore(question, terms) }))
     .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || right.question.topperCount - left.question.topperCount || left.question.question.localeCompare(right.question.question))
+    .sort(compareWorkspaceSearchEntries)
     .slice(0, limit)
     .map((entry) => entry.question);
 }
@@ -756,7 +761,16 @@ function searchScore(question: WorkspaceQuestion, terms: string[]) {
     else if (matchesSearchTerm(term, question.syllabusPath.join(" ").toLowerCase(), syllabusTokensForQuestion)) score += 2.25 + tokenScore;
     else score += 1 + tokenScore;
   }
-  return score + question.topperCount;
+  return score;
+}
+
+function compareWorkspaceSearchEntries(
+  left: { question: WorkspaceQuestion; score: number },
+  right: { question: WorkspaceQuestion; score: number },
+) {
+  return right.score - left.score
+    || right.question.topperCount - left.question.topperCount
+    || left.question.question.localeCompare(right.question.question);
 }
 
 function filteredTokens(value: string) {

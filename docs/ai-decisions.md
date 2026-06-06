@@ -44,3 +44,4 @@
 - 2026-06-06: Deployed `/api/search` now uses lightweight lexical shell search for public browse/study shells; semantic/vault-backed fallback was removed from the deployed path to stay under Vercel’s 250 MB function limit.
 - 2026-06-06: The dedicated `/pdf/[answerId]` viewer now uses a constrained internal scroll container with desktop book spreads, mobile single-column fallback, bounded lazy page rendering, and 75%–125% zoom (default 80%).
 - 2026-06-06: Auth is temporarily forced off in code for QA so public detail/PDF flows stay open without sign-in while token/origin/rate-limit protections remain in place.
+- 2026-06-06: Public `/api/search` ranking is relevance-first; exact/strong question-text matches outrank newer-year or higher-copy-count metadata, which now only breaks ties.

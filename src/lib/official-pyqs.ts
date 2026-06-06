@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import type { SubjectPyqCard } from "./search-results";
-import { bestTokenMatchScore, matchesSearchTerm, searchTerms, searchTokens } from "./search-text";
+import { bestTokenMatchScore, matchesSearchTerm, normalizeSearchText, searchTerms, searchTokens } from "./search-text";
 
 interface OfficialRow {
   id: string;
@@ -52,15 +52,31 @@ interface OfficialLinkDataset {
   links?: Record<string, OfficialAnswerLink[]>;
 }
 
+interface OfficialRowSearchRank {
+  score: number;
+  exactQuestionPhraseHit: boolean;
+  allTermsInQuestion: boolean;
+  questionTermHits: number;
+  syllabusTermHits: number;
+  keywordTermHits: number;
+}
+
+interface RelevantQuestionGroup {
+  key: string;
+  bestLink: OfficialAnswerLink;
+  sourceAvailableCount: number;
+  topperCopies: NonNullable<SubjectPyqCard["relevantQuestions"]>[number]["topperCopies"];
+}
+
 export function getOfficialSubjectPyqs(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
   const terms = searchTerms(query);
   const syllabusTerms = searchTerms(syllabus);
   return loadOfficialRows()
     .filter((row) => row.subjectKey === subjectKey)
     .filter((row) => matchesSyllabus(row, syllabusTerms))
-    .map((row) => ({ row, score: terms.length ? fallbackSearchScore(row, terms) : 1 }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || (right.row.year || 0) - (left.row.year || 0))
+    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
+    .filter((entry) => entry.rank.score > 0)
+    .sort(compareOfficialRowSearchResults)
     .slice(0, limit)
     .map((entry) => toOfficialCard(entry.row));
 }
@@ -71,9 +87,9 @@ export function getOfficialSubjectPyqShells(subjectKey: string, query = "", limi
   return loadOfficialRows()
     .filter((row) => row.subjectKey === subjectKey)
     .filter((row) => matchesSyllabus(row, syllabusTerms))
-    .map((row) => ({ row, score: terms.length ? fallbackSearchScore(row, terms) : 1 }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || (right.row.year || 0) - (left.row.year || 0))
+    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
+    .filter((entry) => entry.rank.score > 0)
+    .sort(compareOfficialRowSearchResults)
     .slice(0, limit)
     .map((entry) => toOfficialShell(entry.row));
 }
@@ -101,9 +117,9 @@ export function getOfficialBrowsePyqs(
   return loadOfficialRows()
     .filter((row) => !cat || cat === "all" || row.category.toLowerCase() === cat || row.subjectKey === cat)
     .filter((row) => !kw || row.keywords.some((item) => item.toLowerCase().includes(kw)))
-    .map((row) => ({ row, score: terms.length ? fallbackSearchScore(row, terms) : 1 }))
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score || (right.row.year || 0) - (left.row.year || 0))
+    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
+    .filter((entry) => entry.rank.score > 0)
+    .sort(compareOfficialRowSearchResults)
     .slice(0, limit)
     .map((entry) => toOfficialShell(entry.row));
 }
@@ -207,48 +223,95 @@ function groupRelevantQuestions(links: OfficialAnswerLink[]): SubjectPyqCard["re
   }
 
   return [...groups.entries()]
-    .map(([key, group]) => {
-      const first = group[0];
-      const topperCopies = group
-        .slice()
-        .sort((a, b) => Number(b.sourceAvailable) - Number(a.sourceAvailable) || b.matchConfidence - a.matchConfidence)
-        .map((link) => ({
-          answerId: link.topperAnswerId,
-          sourceAvailable: link.sourceAvailable && Boolean(link.pageNormalized) && ["valid", "fallback"].includes(link.pageStatus),
-          sourceStatus: link.sourceStatus,
-          topperName: displayTopperName(link.topperName),
-          nameStatus: link.nameStatus || (link.topperName === "Anonymous topper" ? "anonymous" : "filename"),
-          rank: link.rank,
-          year: link.year,
-          institute: link.institute,
-          marks: link.marksObtained || null,
-          pageHint: link.pageNormalized || null,
-          pageStatus: link.pageStatus,
-          interpretation: usefulSummary(link.summary, link.summaryStatus) ? link.summary : "",
-          summaryStatus: usefulSummary(link.summary, link.summaryStatus) ? "available" : (link.summaryStatus === "too_thin" ? "too_thin" : "missing"),
-          valueAdds: link.valueAdds || [],
-          matchType: link.matchType,
-          matchConfidence: link.matchConfidence,
-          matchedQuestion: link.extractedQuestion,
-        }));
+    .map(([key, group]) => buildRelevantQuestionGroup(key, group))
+    .sort(compareRelevantQuestionGroups)
+    .map(({ key, bestLink, sourceAvailableCount, topperCopies }) => ({
+      id: key.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 160),
+      question: bestLink.extractedQuestion,
+      paper: bestLink.paper || "",
+      category: bestLink.category || "",
+      syllabusTags: bestLink.syllabusTags || [],
+      keywords: bestLink.keywords || [],
+      matchType: bestLink.matchType,
+      matchConfidence: bestLink.matchConfidence,
+      matchReason: bestLink.matchReason || matchLabel(bestLink.matchType, bestLink.matchConfidence),
+      reviewStatus: "published" as const,
+      topperCount: topperCopies.length,
+      sourceAvailableCount,
+      topperCopies,
+    }));
+}
 
-      return {
-        id: key.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 160),
-        question: first.extractedQuestion,
-        paper: first.paper || "",
-        category: first.category || "",
-        syllabusTags: first.syllabusTags || [],
-        keywords: first.keywords || [],
-        matchType: first.matchType,
-        matchConfidence: first.matchConfidence,
-        matchReason: first.matchReason || matchLabel(first.matchType, first.matchConfidence),
-        reviewStatus: "published" as const,
-        topperCount: topperCopies.length,
-        sourceAvailableCount: topperCopies.filter((copy) => copy.sourceAvailable).length,
-        topperCopies,
-      };
-    })
-    .sort((a, b) => b.sourceAvailableCount - a.sourceAvailableCount || b.matchConfidence - a.matchConfidence || b.topperCount - a.topperCount);
+function buildRelevantQuestionGroup(key: string, group: OfficialAnswerLink[]): RelevantQuestionGroup {
+  const bestLink = group.slice().sort(compareRelevantQuestionBestLinks)[0];
+  const topperCopies = group
+    .slice()
+    .sort(compareTopperCopies)
+    .map((link) => ({
+      answerId: link.topperAnswerId,
+      sourceAvailable: hasUsableSource(link),
+      sourceStatus: link.sourceStatus,
+      topperName: displayTopperName(link.topperName),
+      nameStatus: link.nameStatus || (link.topperName === "Anonymous topper" ? "anonymous" : "filename"),
+      rank: link.rank,
+      year: link.year,
+      institute: link.institute,
+      marks: link.marksObtained || null,
+      pageHint: link.pageNormalized || null,
+      pageStatus: link.pageStatus,
+      interpretation: usefulSummary(link.summary, link.summaryStatus) ? link.summary : "",
+      summaryStatus: usefulSummary(link.summary, link.summaryStatus) ? "available" : (link.summaryStatus === "too_thin" ? "too_thin" : "missing"),
+      valueAdds: link.valueAdds || [],
+      matchType: link.matchType,
+      matchConfidence: link.matchConfidence,
+      matchedQuestion: link.extractedQuestion,
+    }));
+
+  return {
+    key,
+    bestLink,
+    sourceAvailableCount: topperCopies.filter((copy) => copy.sourceAvailable).length,
+    topperCopies,
+  };
+}
+
+function compareRelevantQuestionGroups(left: RelevantQuestionGroup, right: RelevantQuestionGroup) {
+  return right.sourceAvailableCount - left.sourceAvailableCount
+    || compareRelevantQuestionBestLinks(left.bestLink, right.bestLink)
+    || right.topperCopies.length - left.topperCopies.length;
+}
+
+function compareRelevantQuestionBestLinks(left: OfficialAnswerLink, right: OfficialAnswerLink) {
+  return relevantQuestionMatchTypeWeight(right.matchType) - relevantQuestionMatchTypeWeight(left.matchType)
+    || right.matchConfidence - left.matchConfidence
+    || Number(hasUsableSource(right)) - Number(hasUsableSource(left))
+    || Number(right.sourceAvailable) - Number(left.sourceAvailable)
+    || compareNullableNumber(left.rank, right.rank, "asc")
+    || compareNullableNumber(right.year, left.year, "asc");
+}
+
+function compareTopperCopies(left: OfficialAnswerLink, right: OfficialAnswerLink) {
+  return Number(hasUsableSource(right)) - Number(hasUsableSource(left))
+    || right.matchConfidence - left.matchConfidence
+    || relevantQuestionMatchTypeWeight(right.matchType) - relevantQuestionMatchTypeWeight(left.matchType);
+}
+
+function hasUsableSource(link: Pick<OfficialAnswerLink, "sourceAvailable" | "pageNormalized" | "pageStatus">) {
+  return link.sourceAvailable && Boolean(link.pageNormalized) && ["valid", "fallback"].includes(link.pageStatus);
+}
+
+function relevantQuestionMatchTypeWeight(matchType: string) {
+  if (["direct", "exact"].includes(matchType)) return 4;
+  if (["strong", "high-confidence"].includes(matchType)) return 3;
+  if (["topic-match", "reasoned"].includes(matchType)) return 2;
+  if (matchType === "loose-topic-match") return 1;
+  return 0;
+}
+
+function compareNullableNumber(left: number | null, right: number | null, direction: "asc" | "desc") {
+  const leftValue = left ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+  const rightValue = right ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+  return direction === "asc" ? leftValue - rightValue : rightValue - leftValue;
 }
 
 function displayTopperName(value: string) {
@@ -407,21 +470,72 @@ function searchableTokens(row: OfficialRow) {
   return searchTokens(searchableText(row));
 }
 
-function fallbackSearchScore(row: OfficialRow, terms: string[]) {
-  if (terms.length === 0) return 1;
+function defaultOfficialRowRank(): OfficialRowSearchRank {
+  return {
+    score: 1,
+    exactQuestionPhraseHit: false,
+    allTermsInQuestion: false,
+    questionTermHits: 0,
+    syllabusTermHits: 0,
+    keywordTermHits: 0,
+  };
+}
+
+function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): OfficialRowSearchRank {
+  if (terms.length === 0) return defaultOfficialRowRank();
+
   const haystack = searchableText(row);
   const tokens = searchableTokens(row);
-  let score = 0;
+  const questionHaystack = normalizeSearchText(row.question);
+  const questionTokens = searchTokens(row.question);
+  const syllabusHaystack = row.syllabusTags.join(" ").toLowerCase();
+  const syllabusTokens = searchTokens(syllabusHaystack);
+  const keywordHaystack = row.keywords.join(" ").toLowerCase();
+  const keywordTokens = searchTokens(keywordHaystack);
+  let baseScore = 0;
+  let questionTermHits = 0;
+  let syllabusTermHits = 0;
+  let keywordTermHits = 0;
 
   for (const term of terms) {
-    if (!matchesSearchTerm(term, haystack, tokens)) return 0;
-    score += bestTokenMatchScore(term, tokens);
-    if (row.question.toLowerCase().includes(term)) score += 0.55;
-    else if (row.syllabusTags.some((tag) => tag.toLowerCase().includes(term))) score += 0.35;
-    else if (row.keywords.some((tag) => tag.toLowerCase().includes(term))) score += 0.2;
+    if (!matchesSearchTerm(term, haystack, tokens)) {
+      return { ...defaultOfficialRowRank(), score: 0 };
+    }
+
+    baseScore += bestTokenMatchScore(term, tokens);
+    if (matchesSearchTerm(term, questionHaystack, questionTokens)) questionTermHits += 1;
+    if (matchesSearchTerm(term, syllabusHaystack, syllabusTokens)) syllabusTermHits += 1;
+    if (matchesSearchTerm(term, keywordHaystack, keywordTokens)) keywordTermHits += 1;
   }
 
-  return score / terms.length;
+  const normalizedQuery = normalizeSearchText(query);
+  const exactQuestionPhraseHit = Boolean(normalizedQuery) && questionHaystack.includes(normalizedQuery);
+  const allTermsInQuestion = questionTermHits === terms.length;
+
+  return {
+    score: baseScore / terms.length
+      + (exactQuestionPhraseHit ? 1.4 : 0)
+      + (allTermsInQuestion ? 0.9 : 0)
+      + (questionTermHits / terms.length) * 0.75
+      + (syllabusTermHits / terms.length) * 0.18
+      + (keywordTermHits / terms.length) * 0.08,
+    exactQuestionPhraseHit,
+    allTermsInQuestion,
+    questionTermHits,
+    syllabusTermHits,
+    keywordTermHits,
+  };
+}
+
+function compareOfficialRowSearchResults(
+  left: { row: OfficialRow; rank: OfficialRowSearchRank },
+  right: { row: OfficialRow; rank: OfficialRowSearchRank },
+) {
+  return Number(right.rank.exactQuestionPhraseHit) - Number(left.rank.exactQuestionPhraseHit)
+    || Number(right.rank.allTermsInQuestion) - Number(left.rank.allTermsInQuestion)
+    || right.rank.questionTermHits - left.rank.questionTermHits
+    || right.rank.score - left.rank.score
+    || (right.row.year || 0) - (left.row.year || 0);
 }
 
 function matchesSyllabus(row: OfficialRow, terms: string[]) {
@@ -476,3 +590,9 @@ function toYear(value: string) {
 function slug(value: string) {
   return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "q";
 }
+
+export const __testUtils = {
+  groupRelevantQuestions,
+  rankOfficialRow,
+  compareOfficialRowSearchResults,
+};
