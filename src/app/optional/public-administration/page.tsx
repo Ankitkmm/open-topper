@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
-import { SubjectWorkspace, SubjectWorkspaceFallback } from "@/components/SubjectWorkspace";
+import { OfficialSubjectPageClient } from "@/components/OfficialSubjectPageClient";
+import { OfficialSubjectWorkspace } from "@/components/OfficialSubjectWorkspace";
 import { getSubjectPageMeta, getSubjectSyllabusNodes } from "@/lib/study-page-data";
-import { getInitialWorkspaceSubjectShells, getSubjectProgressQuestionIds } from "@/lib/static-shell-data";
+import { getInitialOfficialSubjectShells, getOfficialProgressQuestionIds } from "@/lib/static-shell-data";
 
 export const metadata: Metadata = {
   title: "Public Administration Optional - UPSCat",
@@ -12,15 +13,15 @@ export const metadata: Metadata = {
 
 export default async function Page() {
   const subject = getSubjectPageMeta("public-administration");
-  const questions = await getInitialWorkspaceSubjectShells("public-administration");
-  const progressQuestionIds = getSubjectProgressQuestionIds("public-administration");
+  const questions = getInitialOfficialSubjectShells("public-administration");
+  const progressQuestionIds = getOfficialProgressQuestionIds("public-administration");
   const syllabusNodes = await getSubjectSyllabusNodes("public-administration");
 
   return (
     <AuthProviderBoundary>
       <Suspense
         fallback={
-          <SubjectWorkspaceFallback
+          <OfficialSubjectWorkspace
             subjectKey="public-administration"
             title={subject.title}
             description={subject.description}
@@ -28,16 +29,17 @@ export default async function Page() {
             syllabusNodes={syllabusNodes}
             query=""
             selectedSyllabusId=""
+            focusedQuestionId=""
             progressQuestionIds={progressQuestionIds}
             baseHref={subject.href}
           />
         }
       >
-        <SubjectWorkspace
+        <OfficialSubjectPageClient
           subjectKey="public-administration"
           title={subject.title}
           description={subject.description}
-          questions={questions}
+          initialQuestions={questions}
           syllabusNodes={syllabusNodes}
           progressQuestionIds={progressQuestionIds}
           baseHref={subject.href}

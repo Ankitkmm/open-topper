@@ -1,5 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
-import { isPublicAuthAvailable } from "@/lib/auth-availability";
+import { isPublicAuthAvailable, shouldFailClosedForMissingAuth } from "@/lib/auth-availability";
 
 export const PRIVATE_JSON_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -19,6 +19,13 @@ export async function getAuthenticatedUser() {
 }
 
 export async function requireSessionResponseIfConfigured() {
+  if (shouldFailClosedForMissingAuth()) {
+    return Response.json(
+      { error: "Authentication is required but Supabase auth is not configured." },
+      { status: 503, headers: PRIVATE_JSON_HEADERS },
+    );
+  }
+
   if (!isEmailPasswordAuthConfigured()) return null;
   const user = await getAuthenticatedUser();
   if (user?.email) return null;

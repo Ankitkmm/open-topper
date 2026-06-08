@@ -1,3 +1,9 @@
+import {
+  PUBLIC_TOPPER_COPY_FALLBACK,
+  displayTopperName,
+  normalizeTopperName,
+} from "./topper-names";
+
 const UNAVAILABLE_TOPPER_NAMES = [
   "anonymous topper",
   "unknown topper",
@@ -5,16 +11,16 @@ const UNAVAILABLE_TOPPER_NAMES = [
   "name unavailable",
 ];
 
-export const PUBLIC_TOPPER_NAME_FALLBACK = "Name unavailable";
+export const PUBLIC_TOPPER_NAME_FALLBACK = PUBLIC_TOPPER_COPY_FALLBACK;
 
 export function normalizePublicTopperName(value: string | null | undefined) {
-  const clean = cleanPublicText(value);
-  if (!clean) return null;
-  return UNAVAILABLE_TOPPER_NAMES.includes(clean.toLowerCase()) ? null : clean;
+  const normalized = normalizeTopperName(value);
+  if (!normalized) return null;
+  return UNAVAILABLE_TOPPER_NAMES.includes(normalized.toLowerCase()) ? null : normalized;
 }
 
 export function displayPublicTopperName(value: string | null | undefined) {
-  return normalizePublicTopperName(value) || PUBLIC_TOPPER_NAME_FALLBACK;
+  return displayTopperName(value);
 }
 
 export function isPublishableQuestionText(value: string | null | undefined) {

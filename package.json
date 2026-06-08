@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "node scripts/sync-pdf-runtime-data.js && next build",
+    "build": "node scripts/sync-pdf-runtime-data.js && node scripts/check-no-public-pdf-url-leaks.js && next build && node scripts/check-no-public-pdf-url-leaks.js --include-build",
     "start": "next start",
     "lint": "eslint",
     "sync-pdf-runtime": "node scripts/sync-pdf-runtime-data.js",
@@ -24,7 +24,11 @@
     "build-official-links": "tsx scripts/build-official-pyq-links.ts",
     "build-all": "tsx scripts/build-entities.ts && tsx scripts/build-ocr-links.ts && tsx scripts/build-themes.ts",
     "import-upsckata": "tsx scripts/import-upsckata.ts",
-    "filter-broken-pdfs": "tsx scripts/filter-broken-pdf-links.ts"
+    "filter-broken-pdfs": "tsx scripts/filter-broken-pdf-links.ts",
+    "check:no-public-leaks": "node scripts/check-no-public-pdf-url-leaks.js",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "node --test --import tsx src/lib/__tests__/*.test.ts",
+    "verify": "npm run lint && npm run typecheck && npm run test && node scripts/check-no-public-pdf-url-leaks.js && npm run build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",

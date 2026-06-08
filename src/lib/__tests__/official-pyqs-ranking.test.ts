@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { __testUtils } from '../official-pyqs';
+import { __testUtils, type OfficialRow } from '../official-pyqs';
 
 const { compareOfficialRowSearchResults, groupRelevantQuestions, rankOfficialRow } = __testUtils;
 
@@ -9,7 +9,7 @@ test('official top-level ranking prefers exact question-text hits over syllabus-
   const query = 'climate change';
   const terms = ['climate', 'change'];
 
-  const exactQuestion = {
+  const exactQuestion: OfficialRow = {
     id: 'q_exact',
     subjectKey: 'gs3',
     question: 'How does climate change affect agriculture in India?',
@@ -21,7 +21,7 @@ test('official top-level ranking prefers exact question-text hits over syllabus-
     keywords: ['agriculture'],
   };
 
-  const syllabusOnly = {
+  const syllabusOnly: OfficialRow = {
     id: 'q_syllabus',
     subjectKey: 'gs3',
     question: 'Discuss irrigation reforms in India.',

@@ -2,7 +2,8 @@ import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { getProgressRateLimitMax, getRateLimitWindowMs } from "@/lib/env";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { PRIVATE_JSON_HEADERS, isEmailPasswordAuthConfigured } from "@/lib/session-access";
+import { readBoundedJson, requireJsonMutationRequest } from "@/lib/request-guards";
+import { PRIVATE_JSON_HEADERS, isEmailPasswordAuthConfigured, requireSessionResponseIfConfigured } from "@/lib/session-access";
 import type { ProgressItemType } from "@/utils/supabase/schema";
 import { createClient } from "@/utils/supabase/server";
 
@@ -16,6 +17,9 @@ type ProgressEntryRow = {
 };
 
 export async function GET(req: NextRequest) {
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
+
   if (!isEmailPasswordAuthConfigured()) {
     return Response.json({ entries: [], configured: false }, { headers: PRIVATE_JSON_HEADERS });
   }
@@ -47,7 +51,8 @@ export async function GET(req: NextRequest) {
     .order("updated_at", { ascending: false }) as unknown as { data: ProgressEntryRow[] | null; error: { message: string } | null };
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500, headers: PRIVATE_JSON_HEADERS });
+    console.error("[progress] Failed to read user progress", error);
+    return Response.json({ error: "Progress sync is temporarily unavailable." }, { status: 500, headers: PRIVATE_JSON_HEADERS });
   }
 
   return Response.json({
@@ -62,6 +67,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const requestError = requireJsonMutationRequest(req, 64_000);
+  if (requestError) return requestError;
+
   if (!isEmailPasswordAuthConfigured()) {
     return Response.json({ configured: false }, { status: 503, headers: PRIVATE_JSON_HEADERS });
   }
@@ -87,12 +95,9 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: "Sign in required." }, { status: 401, headers: PRIVATE_JSON_HEADERS });
   }
 
-  let body: { entries?: Array<{ itemType?: string; itemId?: string; done?: boolean }> };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400, headers: PRIVATE_JSON_HEADERS });
-  }
+  const bodyResult = await readBoundedJson<{ entries?: Array<{ itemType?: string; itemId?: string; done?: boolean }> }>(req, 64_000);
+  if (!bodyResult.ok) return bodyResult.response;
+  const body = bodyResult.value;
 
   const entries = (body.entries || [])
     .map((entry) => ({
@@ -100,7 +105,8 @@ export async function PUT(req: NextRequest) {
       itemId: String(entry.itemId || "").trim(),
       done: Boolean(entry.done),
     }))
-    .filter((entry) => entry.itemId && ITEM_TYPES.has(entry.itemType));
+    .filter((entry) => entry.itemId.length <= 160 && ITEM_TYPES.has(entry.itemType))
+    .slice(0, 500);
 
   if (!entries.length) {
     return Response.json({ ok: true, count: 0 }, { headers: PRIVATE_JSON_HEADERS });
@@ -118,7 +124,8 @@ export async function PUT(req: NextRequest) {
     .upsert(rows as never[], { onConflict: "user_id,item_type,item_id" });
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500, headers: PRIVATE_JSON_HEADERS });
+    console.error("[progress] Failed to write user progress", error);
+    return Response.json({ error: "Progress sync is temporarily unavailable." }, { status: 500, headers: PRIVATE_JSON_HEADERS });
   }
 
   return Response.json({ ok: true, count: rows.length }, { headers: PRIVATE_JSON_HEADERS });

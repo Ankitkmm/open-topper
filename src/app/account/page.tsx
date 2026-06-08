@@ -7,6 +7,11 @@ import { StudyNav } from "@/components/StudyNav";
 export const metadata: Metadata = {
   title: "Account - UPSCat",
   description: "Account status and progress settings for UPSCat.",
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+  },
 };
 
 export default function Page() {

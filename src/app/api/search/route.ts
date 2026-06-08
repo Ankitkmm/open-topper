@@ -5,8 +5,14 @@ import {
   getOfficialQuestionShell,
   getOfficialSubjectPyqShells,
 } from "@/lib/official-pyqs";
-import { getWorkspaceNode, getWorkspaceQuestionById, searchWorkspaceQuestions } from "@/lib/question-bank-runtime";
+import {
+  getWorkspaceNode,
+  getWorkspaceQuestionById,
+  searchWorkspaceQuestions,
+  toWorkspaceQuestionShell,
+} from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { boundedParam } from "@/lib/request-guards";
 import { getSubjectKeyFromValue, type SubjectKey } from "@/lib/subject-definitions";
 
 const PRIVATE_SEARCH_HEADERS = {
@@ -32,12 +38,13 @@ export async function GET(req: NextRequest) {
   }
 
   const dataset = req.nextUrl.searchParams.get("dataset") === "official" ? "official" : "workspace";
-  const subject = req.nextUrl.searchParams.get("subject") || "";
+  const subject = boundedParam(req.nextUrl.searchParams.get("subject"), 80);
   const subjectKey = getSubjectKeyFromValue(subject);
-  const questionId = req.nextUrl.searchParams.get("questionId") || "";
-  const syllabusId = req.nextUrl.searchParams.get("syllabusId") || req.nextUrl.searchParams.get("syllabus") || "";
-  const limit = Math.min(120, Math.max(1, parseInt(req.nextUrl.searchParams.get("limit") || "40", 10)));
-  const query = req.nextUrl.searchParams.get("q") || "";
+  const questionId = boundedParam(req.nextUrl.searchParams.get("questionId"), 160);
+  const syllabusId = boundedParam(req.nextUrl.searchParams.get("syllabusId") || req.nextUrl.searchParams.get("syllabus"), 160);
+  const parsedLimit = Number.parseInt(boundedParam(req.nextUrl.searchParams.get("limit"), 4) || "40", 10);
+  const limit = Math.min(120, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : 40));
+  const query = boundedParam(req.nextUrl.searchParams.get("q"), 500);
 
   const results = dataset === "official"
     ? await searchOfficialShells({ query, subject, subjectKey, questionId, syllabusId, limit })
@@ -86,7 +93,7 @@ async function searchWorkspaceShells(options: {
 }) {
   if (options.questionId.trim()) {
     const shell = getWorkspaceQuestionById(options.questionId.trim());
-    return shell ? [{ ...shell, linkedInsights: [], searchText: undefined }] : [];
+    return shell ? [toWorkspaceQuestionShell(shell)] : [];
   }
 
   const questions = searchWorkspaceQuestions({
@@ -96,11 +103,7 @@ async function searchWorkspaceShells(options: {
     limit: options.limit,
   });
 
-  return questions.map((question) => ({
-    ...question,
-    linkedInsights: [],
-    searchText: undefined,
-  }));
+  return questions.map(toWorkspaceQuestionShell);
 }
 
 export function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {

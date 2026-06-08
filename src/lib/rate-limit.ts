@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 import { hasDatabaseUrl } from "./env";
 import { queryDb } from "./db";
@@ -19,7 +20,7 @@ export async function checkRateLimit(req: NextRequest, options: { scope: string;
 }
 
 function checkMemoryRateLimit(req: NextRequest, options: { scope: string; max: number; windowMs: number }) {
-  const key = `${options.scope}:${clientIdentity(req)}`;
+  const key = `${options.scope}:${hashedClientIdentity(req)}`;
   const now = Date.now();
   const current = buckets.get(key);
 
@@ -50,7 +51,7 @@ function checkMemoryRateLimit(req: NextRequest, options: { scope: string; max: n
 
 async function checkDatabaseRateLimit(req: NextRequest, options: { scope: string; max: number; windowMs: number }) {
   await ensureRateLimitTable();
-  const identity = clientIdentity(req);
+  const identity = hashedClientIdentity(req);
   const now = Date.now();
   const windowStart = Math.floor(now / options.windowMs) * options.windowMs;
   const resetAt = windowStart + options.windowMs;
@@ -88,8 +89,18 @@ async function ensureRateLimitTable() {
 }
 
 function clientIdentity(req: NextRequest) {
-  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const realIp = req.headers.get("x-real-ip")?.trim();
   const ua = req.headers.get("user-agent")?.trim() || "unknown";
+  const trustedProxy = process.env.VERCEL === "1" || process.env.TRUST_PROXY_HEADERS === "true";
+  const forwarded = trustedProxy ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : "";
+  const realIp = trustedProxy ? req.headers.get("x-real-ip")?.trim() : "";
   return [forwarded || realIp || "local", ua.slice(0, 120)].join("|");
 }
+
+function hashedClientIdentity(req: NextRequest) {
+  return createHash("sha256").update(clientIdentity(req)).digest("hex");
+}
+
+export const __testUtils = {
+  clientIdentity,
+  hashedClientIdentity,
+};

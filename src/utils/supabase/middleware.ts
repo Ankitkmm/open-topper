@@ -1,12 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { getSupabasePublicPublishableKey, getSupabasePublicUrl } from "@/lib/public-env";
 import type { Database } from "@/utils/supabase/schema";
 
 const AUTH_COOKIE_PATTERN = /^sb-.*-auth-token(?:\.\d+)?$/;
 
 export async function updateSession(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const url = getSupabasePublicUrl();
+  const key = getSupabasePublicPublishableKey();
 
   if (!url || !key || !hasSupabaseAuthCookie(request)) {
     return NextResponse.next({ request });

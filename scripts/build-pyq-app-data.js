@@ -13,6 +13,7 @@ const R2_MAP_FILE = path.join(ROOT, "data", "app", "pdf-r2-map.json");
 const LOCAL_PDFS_DIR = path.join(ROOT, "local-pdfs");
 const TOPPERS_FILE = path.join(ROOT, "data", "app", "entities", "toppers.json");
 const VAULT_DOCUMENTS_FILE = path.join(ROOT, "data", "app", "vault", "documents.json");
+const TOPPER_NAME_OVERRIDES_FILE = path.join(ROOT, "data", "curation", "topper-name-overrides.json");
 
 const BAD_NAME_TOKENS = new Set([
   "complete", "master", "mock", "sample", "paper", "part", "copy", "test", "series", "booklet",
@@ -30,6 +31,12 @@ const CURATED_TOPPER_RANKS = [
   ["shruti sharma", { rank: 1, year: 2021 }],
   ["aayushi bansal", { rank: 7, year: 2024 }],
 ];
+
+const TOPPER_NAME_OVERRIDES = readJson(TOPPER_NAME_OVERRIDES_FILE, {
+  suppressedNames: [],
+  canonicalNames: [],
+});
+const SUPPRESSED_NAME_KEYS = new Set((TOPPER_NAME_OVERRIDES.suppressedNames || []).map(normalizeOverrideKey));
 
 function readJson(file, fallback) {
   try {
@@ -73,6 +80,80 @@ function normalizeNameKey(value) {
     .toLowerCase();
 }
 
+function normalizeOverrideKey(value) {
+  return String(value || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/&/g, " and ")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function compactOverrideKey(value) {
+  return normalizeOverrideKey(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function curatedTopperIdentity(...values) {
+  const haystack = values.map((value) => cleanStudyText(value)).filter(Boolean).join(" ");
+  if (!haystack) return null;
+
+  const key = normalizeOverrideKey(haystack);
+  const compact = compactOverrideKey(haystack);
+  for (const entry of TOPPER_NAME_OVERRIDES.canonicalNames || []) {
+    const matchKey = normalizeOverrideKey(entry.match);
+    const matchCompact = compactOverrideKey(entry.match);
+    if (!matchKey) continue;
+    if (key.includes(matchKey) || compact.includes(matchCompact)) {
+      return {
+        value: entry.name,
+        rank: cleanRank(entry.rank),
+        year: cleanYear(entry.year),
+        source: "curation",
+        status: "curated",
+      };
+    }
+  }
+
+  return null;
+}
+
+function isSuppressedTopperName(value) {
+  const clean = cleanStudyText(value);
+  if (!clean) return true;
+
+  const key = normalizeOverrideKey(clean);
+  if (!key) return true;
+  if (SUPPRESSED_NAME_KEYS.has(key)) return true;
+  if (isLikelyMachineIdName(clean)) return true;
+
+  return [
+    /^pub(?:lic)?\s+adm(?:n|in)(?:istration)?$/i,
+    /^anthro(?:pology)?\s+(?:society|theories|tribal)$/i,
+    /^tsm\s+soc\s+nice\s+ias$/i,
+    /^guidance\s+ias$/i,
+    /^(?:geomorphology|climatology|biogeography|economic|population|environmental\s+geo|perspective|agriculture|tectonic\s+geomorphology)\b.*\b(?:handwritten|notes|watermarkedpdf)\b/i,
+    /^(?:mts\s+nl\s+flt|flt)(?:\s+evaluated|\s+compressed)?$/i,
+    /^evaluated(?:\s*copy)?$/i,
+    /^anonymous\b/i,
+    /^(?:test|class|question|copy|copies|topper\s+copies|checked|sent|scan)$/i,
+  ].some((pattern) => pattern.test(clean));
+}
+
+function isLikelyMachineIdName(value) {
+  const clean = String(value || "").trim();
+  const key = normalizeOverrideKey(clean);
+  if (!key) return true;
+
+  const compact = key.replace(/\s+/g, "");
+  if (/^[a-f0-9]{8,}$/i.test(compact) && /\d/.test(compact)) return true;
+  if (/^[A-Za-z0-9_-]{18,}$/.test(clean) && /\d/.test(clean)) return true;
+  if (/^[a-f]{6,}$/i.test(compact)) return true;
+
+  const words = key.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.every((word) => /^[a-f]{1,6}$/i.test(word)) && compact.length >= 6;
+}
+
 function isPlausibleRankName(value) {
   const key = normalizeNameKey(value);
   const words = key.split(/\s+/).filter(Boolean);
@@ -102,11 +183,22 @@ function cleanStudyText(value) {
 }
 
 function cleanDisplayName(value, fallback = null) {
+  const curated = curatedTopperIdentity(value);
+  if (curated) return curated.value;
+  if (isSuppressedTopperName(value)) return fallback;
+
   let name = cleanStudyText(value)
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/watermarkedpdf/gi, " ")
+    .replace(/watermark/gi, " ")
+    .replace(/evaluated(?=[a-z])/gi, "evaluated ")
+    .replace(/checked(?=[a-z])/gi, "checked ")
     .replace(/\bair\s*\d+\b/gi, " ")
     .replace(/\brank\s*\d+\b/gi, " ")
+    .replace(/\br\s*\d{1,4}\b/gi, " ")
+    .replace(/\bta\s*\d{1,3}\b/gi, " ")
     .replace(/\b[a-z]\s*\d{1,3}\b/gi, " ")
-    .replace(/\b(?:test|copy|booklet|paper|answer|topper|toppers|visionias|vision\s+ias|levelupias|forumias|vajiram|mgp|awfg|optional|socio|op|ta|modern|ancient|medieval|world|history|india|and)\b/gi, " ")
+    .replace(/\b(?:test|class|copy|copies|booklet|paper|answer|topper|toppers|visionias|vision\s+ias|next\s+ias|nextias|levelupias|forumias|vajiram|mgp|awfg|optional|socio|op|ta|modern|ancient|medieval|world|history|india|and|checked|sent|scan|evaluated|flt|mts|nl|guidance|nice|ias)\b/gi, " ")
     .replace(/[_-]+/g, " ")
     .replace(/[^A-Za-z .'-]/g, " ")
     .replace(/\b[A-Za-z]\b/g, " ")
@@ -114,32 +206,58 @@ function cleanDisplayName(value, fallback = null) {
     .trim();
 
   const words = name.split(/\s+/).filter(Boolean);
+  const curatedAfterClean = curatedTopperIdentity(name);
+  if (curatedAfterClean) return curatedAfterClean.value;
+  if (isSuppressedTopperName(name)) return fallback;
   if (words.some((word) => BAD_NAME_TOKENS.has(word.toLowerCase()))) return fallback;
   if (name.length < 3 || words.length > 5 || /\bunknown\b/i.test(name)) return fallback;
+  if (isLikelyMachineIdName(name)) return fallback;
   return titleCase(name);
 }
 
 function extractDisplayNameFromFilename(value) {
+  const curated = curatedTopperIdentity(value);
+  if (curated) return curated.value;
+  if (isSuppressedTopperName(value)) return null;
+
   const base = cleanPdfFilename(value).replace(/\.pdf$/i, "");
   const clean = base
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/watermarkedpdf/gi, " ")
+    .replace(/watermark/gi, " ")
+    .replace(/evaluated(?=[a-z])/gi, "evaluated ")
+    .replace(/checked(?=[a-z])/gi, "checked ")
     .replace(/\b\d{10,}\b/g, " ")
     .replace(/\bair\s*\d+\b/gi, " ")
     .replace(/\brank\s*\d+\b/gi, " ")
     .replace(/\br\s*\d{1,4}\b/gi, " ")
     .replace(/\bt\s*\d{1,2}\b/gi, " ")
+    .replace(/\bta\s*\d{1,3}\b/gi, " ")
     .replace(/\b[a-z]\s*\d{1,3}\b/gi, " ")
-    .replace(/\b(?:20\d{2}|17\d{8,}|18\d{8,}|drive|upsc|ias|cse|mains|sample|copy|test|series|booklet|paper|sectional|comprehensive|mock|visionias|vision|next|levelupias|forumias|vajiram|mgp|awfg|abhyaas|abhyas|evaluated|rank|air|topper|toppers|unknown|gs|essay|ethics|optional|socio|op|ta|geography|sociology|anthro|anthropology|history|polity|economy|modern|ancient|medieval|world|india|public|administration|top|scorer|pratham|part|famous|more|course|crash|programme|program|foundation|score|marks?|web|verifiedpdfurl|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi, " ")
+    .replace(/\b(?:20\d{2}|17\d{8,}|18\d{8,}|drive|upsc|ias|cse|mains|sample|copy|copies|class|test|series|booklet|paper|sectional|comprehensive|mock|visionias|vision|next|nextias|levelupias|forumias|vajiram|mgp|awfg|abhyaas|abhyas|evaluated|checked|sent|scan|rank|air|topper|toppers|unknown|gs|essay|ethics|optional|socio|op|ta|geography|sociology|anthro|anthropology|history|polity|economy|modern|ancient|medieval|world|india|public|administration|pub|admn|top|scorer|pratham|part|famous|more|course|crash|programme|program|foundation|score|marks?|web|verifiedpdfurl|guidance|nice|flt|mts|nl|notes|handwritten|watermarkedpdf|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/gi, " ")
     .replace(/\b[a-z]\b/gi, " ")
     .replace(/\b\d+(?:st|nd|rd|th)?\b/gi, " ")
     .replace(/[^A-Za-z .'-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   const words = clean.split(/\s+/).filter(Boolean);
+  const curatedAfterClean = curatedTopperIdentity(clean);
+  if (curatedAfterClean) return curatedAfterClean.value;
+  if (isSuppressedTopperName(clean) || isLikelyMachineIdName(clean)) return null;
   if (words.length >= 1 && words.length <= 4 && clean.length >= 4 && !words.some((word) => BAD_NAME_TOKENS.has(word.toLowerCase()))) return titleCase(clean);
   return null;
 }
 
 function resolveTopperName(answer) {
+  const curated = curatedTopperIdentity(
+    answer.topperName,
+    answer.rawFilename,
+    answer.fileName,
+    answer.filename,
+    answer.sourceCdnUrl,
+  );
+  if (curated) return curated;
+
   const extracted = cleanDisplayName(answer.topperName, null);
   if (extracted) return { value: extracted, source: "extracted", status: "extracted" };
   const filenameName = extractDisplayNameFromFilename(answer.rawFilename || answer.fileName || answer.filename || "");
@@ -148,7 +266,7 @@ function resolveTopperName(answer) {
 }
 
 function displayTopperName(value) {
-  return value || "Name unavailable";
+  return value || "Topper copy";
 }
 
 function buildTopperLookup() {
@@ -165,6 +283,7 @@ function buildTopperLookup() {
   };
 
   for (const [name, info] of CURATED_TOPPER_RANKS) add(name, info, "curated");
+  for (const entry of TOPPER_NAME_OVERRIDES.canonicalNames || []) add(entry.name, entry, "curation");
 
   for (const topper of readJson(TOPPERS_FILE, [])) {
     add(topper.displayName, topper, "entities");
@@ -214,13 +333,13 @@ function enrichTopperIdentity(answer, topperNameInfo, yearInfo, topperLookup) {
     };
   }
   const lookup = topperLookup.get(normalizeNameKey(topperNameInfo.value));
-  const rank = cleanRank(answer.rank) || extractRankFromAnswer(answer) || lookup?.rank || null;
-  const year = yearInfo.value || lookup?.year || null;
+  const rank = cleanRank(answer.rank) || extractRankFromAnswer(answer) || topperNameInfo.rank || lookup?.rank || null;
+  const year = yearInfo.value || topperNameInfo.year || lookup?.year || null;
   return {
     rank,
-    rankSource: cleanRank(answer.rank) ? "extracted" : extractRankFromAnswer(answer) ? "filename" : lookup?.rank ? lookup.source : null,
+    rankSource: cleanRank(answer.rank) ? "extracted" : extractRankFromAnswer(answer) ? "filename" : topperNameInfo.rank ? topperNameInfo.source : lookup?.rank ? lookup.source : null,
     year,
-    yearSource: yearInfo.source || (lookup?.year ? lookup.source : null),
+    yearSource: yearInfo.source || (topperNameInfo.year ? topperNameInfo.source : null) || (lookup?.year ? lookup.source : null),
   };
 }
 

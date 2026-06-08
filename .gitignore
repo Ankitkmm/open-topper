@@ -60,3 +60,47 @@ next-env.d.ts
 data/app/
 !data/app/public-official-pyq-links.json
 data/relational/
+
+# python
+__pycache__/
+*.py[cod]
+# local Python environments
+/.venv/
+
+# local editor/tooling state
+/.vscode/
+/.mcp.json
+/.mcp.json.example
+/.reasonix/
+/.kiro/
+
+# root-level local media/import artifacts
+/*.pdf
+/*.pdf_thumb.jpg
+/*.mov
+/*.mov_thumb.jpg
+/*.apkg
+# additional local-only roots/tooling/media hardening
+/.mcp/
+/.vscode*/
+/.venv*/
+/*.mp4
+/*.m4v
+/*.avi
+/*.mkv
+/*.webm
+/*.jpg
+/*.jpeg
+/*.png
+/*.gif
+/*.webp
+/*.tif
+/*.tiff
+/*.wav
+/*.mp3
+/*.m4a
+/*.docx
+/*.pptx
+/*.xls
+/*.xlsm
+/*.csv

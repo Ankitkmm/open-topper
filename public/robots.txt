@@ -1,2 +1,6 @@
 User-agent: *
+Disallow: /api/
+Disallow: /pdf/
+Disallow: /data/
+Disallow: /account/
 Allow: /

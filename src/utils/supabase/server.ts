@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/env";
 import type { Database } from "@/utils/supabase/schema";
 
 export async function createClient(cookieStoreParam?: Awaited<ReturnType<typeof cookies>>) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const url = getSupabaseUrl();
+  const key = getSupabasePublishableKey();
   if (!url || !key) throw new Error("Supabase server auth is not configured.");
   const cookieStore = cookieStoreParam ?? await cookies();
 

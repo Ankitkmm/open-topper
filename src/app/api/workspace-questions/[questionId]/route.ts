@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
-import { getWorkspaceQuestionById } from "@/lib/question-bank-runtime";
+import { getWorkspaceQuestionById, toPublicWorkspaceQuestion } from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { PRIVATE_JSON_HEADERS, requireSessionResponseIfConfigured } from "@/lib/session-access";
 
@@ -32,8 +32,5 @@ export async function GET(
     return Response.json({ error: "Question not found." }, { status: 404, headers: PRIVATE_JSON_HEADERS });
   }
 
-  return Response.json({
-    ...question,
-    searchText: undefined,
-  }, { headers: PRIVATE_JSON_HEADERS });
+  return Response.json(toPublicWorkspaceQuestion(question), { headers: PRIVATE_JSON_HEADERS });
 }

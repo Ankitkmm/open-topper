@@ -35,6 +35,16 @@ export interface WorkspaceQuestion {
   searchText: string;
 }
 
+export type PublicWorkspaceCopy = WorkspaceCopy;
+
+export type PublicWorkspaceQuestion = Omit<WorkspaceQuestion, "searchText"> & {
+  searchText?: never;
+};
+
+export type WorkspaceQuestionShell = Omit<PublicWorkspaceQuestion, "linkedInsights"> & {
+  linkedInsights: [];
+};
+
 export interface WorkspaceSyllabusNode {
   id: string;
   subjectKey: SubjectKey;
@@ -131,6 +141,60 @@ export function getWorkspaceNode(nodeId: string) {
 
 export function getWorkspaceQuestionById(questionId: string) {
   return getWorkspaceIndex().questions.find((question) => question.id === questionId) || null;
+}
+
+export function toPublicWorkspaceCopy(copy: WorkspaceCopy): PublicWorkspaceCopy {
+  return {
+    answerId: copy.answerId,
+    topperName: copy.topperName,
+    rank: copy.rank,
+    year: copy.year,
+    institute: copy.institute,
+    marks: copy.marks,
+    pageHint: copy.pageHint,
+    pageStatus: copy.pageStatus,
+    sourceAvailable: copy.sourceAvailable,
+    sourceStatus: copy.sourceStatus,
+    summary: copy.summary,
+    summaryAvailable: copy.summaryAvailable,
+    summarySource: copy.summarySource,
+  };
+}
+
+export function toPublicWorkspaceQuestion(question: WorkspaceQuestion): PublicWorkspaceQuestion {
+  return {
+    id: question.id,
+    question: question.question,
+    paper: question.paper,
+    category: question.category,
+    subjectKey: question.subjectKey,
+    subjectLabel: question.subjectLabel,
+    estimatedYear: question.estimatedYear,
+    marks: question.marks,
+    syllabusNodeId: question.syllabusNodeId,
+    syllabusPath: Array.isArray(question.syllabusPath) ? [...question.syllabusPath] : [],
+    linkedInsights: Array.isArray(question.linkedInsights)
+      ? question.linkedInsights.map(toPublicWorkspaceCopy)
+      : [],
+    topperCount: question.topperCount,
+  };
+}
+
+export function toWorkspaceQuestionShell(question: WorkspaceQuestion): WorkspaceQuestionShell {
+  return {
+    id: question.id,
+    question: question.question,
+    paper: question.paper,
+    category: question.category,
+    subjectKey: question.subjectKey,
+    subjectLabel: question.subjectLabel,
+    estimatedYear: question.estimatedYear,
+    marks: question.marks,
+    syllabusNodeId: question.syllabusNodeId,
+    syllabusPath: Array.isArray(question.syllabusPath) ? [...question.syllabusPath] : [],
+    linkedInsights: [],
+    topperCount: question.topperCount,
+  };
 }
 
 export function getWorkspaceStats() {

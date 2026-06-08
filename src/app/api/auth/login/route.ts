@@ -2,10 +2,14 @@ import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { getAuthRateLimitMax, getRateLimitWindowMs } from "@/lib/env";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { readBoundedJson, requireJsonMutationRequest } from "@/lib/request-guards";
 import { PRIVATE_JSON_HEADERS, isEmailPasswordAuthConfigured } from "@/lib/session-access";
 import { createClient } from "@/utils/supabase/server";
 
 export async function POST(req: NextRequest) {
+  const requestError = requireJsonMutationRequest(req);
+  if (requestError) return requestError;
+
   if (!isEmailPasswordAuthConfigured()) {
     return Response.json({ error: "Sign-in is temporarily disabled for QA." }, { status: 503, headers: PRIVATE_JSON_HEADERS });
   }
@@ -25,12 +29,9 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  let body: { email?: string; password?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "Invalid request." }, { status: 400, headers: PRIVATE_JSON_HEADERS });
-  }
+  const bodyResult = await readBoundedJson<{ email?: string; password?: string }>(req);
+  if (!bodyResult.ok) return bodyResult.response;
+  const body = bodyResult.value;
 
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");

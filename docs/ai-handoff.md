@@ -3,68 +3,191 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-06 · By: Codex
+Last updated: 2026-06-08 23:59 IST · By: Codex
 
 ## Summary
 
-Implemented the official subject-page topic-filter fix for public GS/Essay pages:
+**Security/PYQ/OCR hardening state is verified and ready for local commit.** The official-PYQ
+builder bug was fixed, generated data was rebuilt, full app verification passed, and the OCR sprint
+advanced as far as the configured credentials allow.
 
-1. **Official syllabus filters now resolve node IDs correctly**
-   - `/api/search?dataset=official` now resolves `syllabusId` node IDs to their syllabus labels before calling official search helpers.
-   - This prevents official topic filtering from treating values like `gs1:topic:...` as fuzzy free text.
+Paid OCR did **not** proceed to pilot/full because the API verification gate correctly blocked direct
+OpenAI use with the current local credentials/config. No page-level OCR spend occurred.
 
-2. **Official selected-topic matching is no longer loose/fuzzy**
-   - Official subject-page topic filtering no longer passes rows through on generic/fuzzy slug terms.
-   - Filtering now uses meaningful topic-term overlap from syllabus labels against official `syllabusTags`/`keywords`.
-   - This fixes the GS1 “Role of women…” bug where unrelated Geography/History PYQs were surfacing in the selected-topic view.
+## What completed this pass
 
-3. **Selected-topic ordering is topic-first**
-   - When an official subject-page syllabus topic is selected, results are ordered by:
-     - normal query relevance first, if a search query is present
-     - then stronger topic match
-     - then year
-   - Non-topic official search behavior remains unchanged.
+### Code/data fixes
 
-4. **Regression coverage**
-   - Added focused official topic-filter tests for:
-     - label vs node-id behavior
-     - exclusion of unrelated climate/island-states PYQs
-     - inclusion of relevant women/population/poverty/urbanization PYQs
-     - stop-word handling
-     - selected-topic ordering
-     - no-syllabus regression safety
+- Fixed `scripts/build-official-pyq-links.ts` subject-scoped fuzzy scoring bug:
+  - subject token indexes are now scored against `subjectCards`, not the global card array.
+  - regenerated official PYQ links recovered healthy coverage.
+- Hardened `scripts/full_openai_ocr.py` active defaults:
+  - default OCR inputs are now local-pdfs only: Acer mirror first, repo local corpus second.
+  - `downloaded-pdfs` requires explicit `--input-dir` / `OCR_INPUT_DIRS` opt-in.
+  - active input scope marker is `local-pdfs-only-v2`.
+- Rebuilt PYQ app data and runtime PDF data.
+- Confirmed `scripts/check-no-public-pdf-url-leaks.js` is part of the build path and must be committed with `package.json`.
 
-## Files changed by this pass
+### OCR execution gates
 
-- `src/app/api/search/route.ts`
-- `src/lib/official-pyqs.ts`
-- `src/lib/__tests__/official-pyqs-syllabus-filter.test.ts`
-- `docs/ai-decisions.md`
-- `docs/ai-handoff.md`
+Run root for this pass:
 
-## Verification
+```text
+/Volumes/Acer/open-topper/extracted_data/ocr_openai/run_20260608T233641
+```
 
-- `node --import tsx --test src/lib/__tests__/official-pyqs-ranking.test.ts src/lib/__tests__/official-pyqs-syllabus-filter.test.ts src/lib/__tests__/workspace-ranking.test.ts`
-- `npm run lint`
-- `npx tsc --noEmit --pretty false` *(still blocked by pre-existing `@vercel/analytics/next` missing-module error from `src/app/layout.tsx`)*
-- `npm run build` *(same pre-existing `@vercel/analytics/next` missing-module blocker)*
-- smoke checks via local helper execution:
-  - resolving the GS1 “Role of women…” node ID yields the full syllabus label
-  - selected-topic top results now show women/population/poverty/urbanization PYQs first
-  - the unrelated climate/island-states PYQ no longer appears in that selected-topic result set
-  - topic + query (`women`) keeps women-related PYQs at the top inside the selected topic
+Local-only estimate completed successfully:
 
-## Decisions
+```text
+Input dirs: /Volumes/Acer/open-topper/local-pdfs
+all PDFs/pages:      2541 / 125654
+selected PDFs/pages: 2541 / 125654
+selected size:       31.494 GiB
+cache valid/current: 0
+remaining pages:     125654
+output dir:          /Volumes/Acer/open-topper/extracted_data/ocr_openai/run_20260608T233641
+```
 
-- Official subject-page syllabus filters should match on meaningful topic terms, not fuzzy slug tokens.
-- Selected-topic official result ordering should prioritize topic match over year once the filter is active.
+API verification status:
 
-## Blockers / remaining work
+- First direct run refused because direct OpenAI requires explicit `--allow-direct-openai`.
+- Rerun with `--allow-direct-openai` refused because `OCR_OPENAI_MODEL` is not configured and the worker will not auto-select a paid model.
+- A manual `/v1/models` request to `https://api.openai.com` using local `OPENAI_API_KEY` failed with HTTP 401 Unauthorized.
+- Therefore pilot/full OCR were correctly **not started**.
 
-- No blocker for this fix itself.
-- Repo-wide typecheck/build still have a pre-existing missing dependency: `@vercel/analytics/next` imported from `src/app/layout.tsx`.
-- Do not stage unrelated untracked local artifacts in the repo root.
+Current OCR outputs from this pass:
 
-## Exact next step
+- no page cache JSON files
+- no per-PDF aggregate Markdown/JSON
+- no OCR record export
+- private estimate/manifest files only under the Acer run root
 
-Stage only the official topic-filter files plus docs updates, commit on `main`, and push to `origin/main`.
+## Generated data after fix
+
+After `npm run build-pyqs`, public official link coverage is healthy again:
+
+```json
+{
+  "officialQuestionCount": 958,
+  "linkedQuestionCount": 841,
+  "linkedCopyCount": 18234,
+  "sourceAvailableCount": 16513,
+  "bySubject": {
+    "gs3": 261,
+    "gs1": 272,
+    "gs2": 255,
+    "gs4": 50,
+    "essay": 3
+  },
+  "byType": {
+    "topic-match": 5709,
+    "loose-topic-match": 12270,
+    "strong": 221,
+    "direct": 34
+  }
+}
+```
+
+This resolves the prior broken generated output that had collapsed to ~183 linked questions and no GS4 coverage.
+
+## Verification completed
+
+All verification below passed after the source/data fixes:
+
+```bash
+node --test --import tsx src/lib/__tests__/*.test.ts
+# 29/29 passed
+
+npx tsc --noEmit --pretty false --incremental false
+# passed
+
+npm run lint -- --no-fix
+# passed
+
+node scripts/check-no-public-pdf-url-leaks.js
+# passed
+
+npm run build
+# passed; 27 static pages; dynamic API/PDF routes; post-build leak check passed
+```
+
+Standalone/runtime packaging was checked after build:
+
+```text
+.next/standalone/data/pdf-runtime/answer-sources.json
+.next/standalone/data/pdf-runtime/pdf-r2-map.json
+```
+
+Runtime source/target hashes now match after build sync:
+
+```text
+data/app/answer-sources.json        == data/pdf-runtime/answer-sources.json
+data/app/pdf-r2-map.json            == data/pdf-runtime/pdf-r2-map.json
+```
+
+## Current blockers / next steps
+
+### OCR blocker
+
+Paid OCR cannot continue until the user/operator provides a valid OpenAI-compatible OCR config:
+
+```bash
+export OPENAI_BASE_URL="https://<valid-openai-compatible-base>"
+export OCR_OPENAI_MODEL="<vision-capable-model-from-that-provider>"
+```
+
+If direct OpenAI is intended, the key must be valid for `https://api.openai.com`, and runs must include `--allow-direct-openai`.
+
+Resume sequence after credentials are fixed:
+
+```bash
+cd /Users/ankitkumar/Downloads/open-topper
+source /tmp/open_topper_ocr_run.env  # if still present; otherwise set OCR_INPUT_ROOT/OCR_RUN_ROOT manually
+
+.venv/bin/python scripts/full_openai_ocr.py \
+  --verify-key \
+  --allow-direct-openai \
+  --input-dir "$OCR_INPUT_ROOT" \
+  --output-dir "$OCR_RUN_ROOT" \
+  --tmp-dir "$OCR_RUN_ROOT/tmp" \
+  --model "$OCR_OPENAI_MODEL" \
+  --concurrency 1 \
+  --rpm-limit 6
+
+.venv/bin/python scripts/full_openai_ocr.py \
+  --pilot \
+  --pilot-limit 2 \
+  --input-dir "$OCR_INPUT_ROOT" \
+  --output-dir "$OCR_RUN_ROOT" \
+  --tmp-dir "$OCR_RUN_ROOT/tmp" \
+  --model "$OCR_OPENAI_MODEL" \
+  --concurrency 2 \
+  --rpm-limit 30
+```
+
+Start `--full` only after `pilot-summary.json` has `gates.pass: true`.
+
+### Git blocker
+
+Do not use `git add .`. Stage only the explicit safe source/data/doc/test files. Exclude:
+
+- root PDFs/JPGs/MOV/APKG
+- `.env.local`
+- `.next/`
+- `node_modules/`
+- `local-pdfs/`
+- `extracted_data/`
+- `.kiro/`, `.reasonix/`, `.vscode/`, `.mcp.json`
+- unrelated files such as `transit_station_collector.py` and the long ad-hoc Markdown note
+
+## Files intentionally changed for the commit
+
+Expected commit scope includes:
+
+- security/PDF/auth/public-boundary source and tests
+- official PYQ builder/runtime/optional page changes
+- topper-name normalization code + curation JSON + tests
+- rebuilt tracked public/private app data required by the changed builders
+- synced `data/pdf-runtime/answer-sources.json`
+- OCR worker/default hardening and OCR task brief
+- docs updated with the actual verified status

@@ -24,7 +24,10 @@ should feel like a spacious library/reading room, not a tech dashboard.
 - **Styling:** Tailwind CSS v4 (`@tailwindcss/postcss`) + a custom design-token system in
   `src/app/globals.css` (4 themes: Library / Sage / Sepia / Night)
 - **Fonts:** Newsreader (serif headings), Inter (body/UI), IBM Plex Mono (stats) via `next/font/google`
-- **Auth:** `next-auth` v5 beta — currently **disabled** (`authAvailable = false` in `layout.tsx`)
+- **Auth:** Supabase SSR (`@supabase/ssr`) email/password auth and progress sync are implemented,
+  but public auth is temporarily forced off for QA via `TEMPORARY_QA_AUTH_DISABLED = true` in
+  `src/lib/auth-availability.ts`. When re-enabled, auth depends on Supabase public env vars plus
+  the progress migration. NextAuth is no longer in the main app path.
 - **Data / search:** Postgres (`pg`) + pgvector spine; local embeddings via `@xenova/transformers`
 - **PDF:** `pdfjs-dist` viewer; PDFs served via private lookup, preferring R2/S3 over Google Drive
 - **Storage:** `@aws-sdk/client-s3` + `lib-storage` (R2/S3) for answer PDFs

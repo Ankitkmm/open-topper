@@ -6,6 +6,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { LogIn, LogOut, UserPlus } from "lucide-react";
 import { AuthProviderBoundary } from "@/components/auth/AuthProviderBoundary";
 import { useOptionalUserData } from "@/components/auth/UserDataProvider";
+import { sanitizeInternalNextPath } from "@/lib/auth-availability";
 
 export function AccountPanel({ next }: { next?: string }) {
   if (typeof next === "string") {
@@ -51,7 +52,7 @@ function AccountPanelContent({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"login" | "signup" | "logout" | null>(null);
 
-  const destination = useMemo(() => (next.startsWith("/") ? next : "/"), [next]);
+  const destination = useMemo(() => sanitizeInternalNextPath(next), [next]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

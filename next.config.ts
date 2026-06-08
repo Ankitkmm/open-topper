@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== "production";
+const scriptSrc = `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`;
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -14,10 +17,11 @@ const securityHeaders = [
       "object-src 'none'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "frame-src 'self' https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev https://*.r2.dev https://*.r2.cloudflarestorage.com",
+      "frame-src 'self'",
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-      "connect-src 'self' https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev https://*.r2.dev https://*.r2.cloudflarestorage.com https://*.supabase.co wss://*.supabase.co",
+      scriptSrc,
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "worker-src 'self' blob:",
       "form-action 'self'",
     ].join("; "),
   },
@@ -45,8 +49,9 @@ const pdfProxyHeaders = [
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      scriptSrc,
       "connect-src 'self'",
+      "worker-src 'self' blob:",
       "form-action 'self'",
     ].join("; "),
   },
@@ -101,6 +106,10 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/answer-source/:answerId",
+        headers: pdfProxyHeaders,
+      },
+      {
+        source: "/pdf/:answerId",
         headers: pdfProxyHeaders,
       },
       {

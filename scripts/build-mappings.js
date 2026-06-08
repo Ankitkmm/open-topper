@@ -18,6 +18,12 @@ const INPUT = fs.existsSync(path.join(ROOT, "data", "app", "questions.json"))
   : path.join(ROOT, "public", "data", "questions.json");
 const OUTPUT_DIR = path.join(ROOT, "data", "mappings", "pyqs");
 const INDEX_FILE = path.join(ROOT, "data", "mappings", "index.json");
+const TOPPER_NAME_OVERRIDES_FILE = path.join(ROOT, "data", "curation", "topper-name-overrides.json");
+const TOPPER_NAME_OVERRIDES = readJson(TOPPER_NAME_OVERRIDES_FILE, {
+  suppressedNames: [],
+  canonicalNames: [],
+});
+const SUPPRESSED_NAME_KEYS = new Set((TOPPER_NAME_OVERRIDES.suppressedNames || []).map(normalizeNameKey));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Helpers
@@ -48,30 +54,121 @@ function generateQuestionId(questionText, category, index) {
   return `pyq_${paper}_${hash}`;
 }
 
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeNameKey(value) {
+  return String(value || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/&/g, " and ")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function compactNameKey(value) {
+  return normalizeNameKey(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function curatedTopperName(value) {
+  const key = normalizeNameKey(value);
+  const compact = compactNameKey(value);
+  if (!key) return null;
+
+  for (const entry of TOPPER_NAME_OVERRIDES.canonicalNames || []) {
+    const matchKey = normalizeNameKey(entry.match);
+    const matchCompact = compactNameKey(entry.match);
+    if (!matchKey) continue;
+    if (key.includes(matchKey) || compact.includes(matchCompact)) return entry.name;
+  }
+
+  return null;
+}
+
+function isSuppressedTopperName(value) {
+  const clean = String(value || "").trim();
+  const key = normalizeNameKey(clean);
+  if (!key) return true;
+  if (SUPPRESSED_NAME_KEYS.has(key)) return true;
+  if (isLikelyMachineIdName(clean)) return true;
+
+  return [
+    /^pub(?:lic)?\s+adm(?:n|in)(?:istration)?$/i,
+    /^anthro(?:pology)?\s+(?:society|theories|tribal)$/i,
+    /^tsm\s+soc\s+nice\s+ias$/i,
+    /^guidance\s+ias$/i,
+    /^(?:geomorphology|climatology|biogeography|economic|population|environmental\s+geo|perspective|agriculture|tectonic\s+geomorphology)\b.*\b(?:handwritten|notes|watermarkedpdf)\b/i,
+    /^(?:mts\s+nl\s+flt|flt)(?:\s+evaluated|\s+compressed)?$/i,
+    /^evaluated(?:\s*copy)?$/i,
+    /^anonymous\b/i,
+    /^(?:test|class|question|copy|copies|topper\s+copies|checked|sent|scan)$/i,
+  ].some((pattern) => pattern.test(clean));
+}
+
+function isLikelyMachineIdName(value) {
+  const clean = String(value || "").trim();
+  const key = normalizeNameKey(clean);
+  if (!key) return true;
+
+  const compact = key.replace(/\s+/g, "");
+  if (/^[a-f0-9]{8,}$/i.test(compact) && /\d/.test(compact)) return true;
+  if (/^[A-Za-z0-9_-]{18,}$/.test(clean) && /\d/.test(clean)) return true;
+  if (/^[a-f]{6,}$/i.test(compact)) return true;
+
+  const words = key.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.every((word) => /^[a-f]{1,6}$/i.test(word)) && compact.length >= 6;
+}
+
 /** Clean filename to extract human-readable topper name */
 function extractTopperName(filename) {
   if (!filename || filename === "Unknown Topper") return null;
+
+  const curated = curatedTopperName(filename);
+  if (curated) return curated;
 
   const raw = filename.replace(/\.pdf$/i, "").replace(/^drive_/, "").trim();
 
   // Skip purely numeric/hex IDs
   if (/^[\d\s\-_]+$/.test(raw) || /^[a-f0-9]{20,}$/i.test(raw)) return null;
   if (/^unknown/i.test(raw)) return null;
+  if (isSuppressedTopperName(raw)) return null;
 
   // Replace separators and clean
-  let name = raw.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+  let name = raw
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/watermarkedpdf/gi, " ")
+    .replace(/watermark/gi, " ")
+    .replace(/evaluated(?=[a-z])/gi, "evaluated ")
+    .replace(/checked(?=[a-z])/gi, "checked ")
+    .replace(/[-_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   // Remove test/copy identifiers
   name = name.replace(
-    /\b(?:Paper|Test|Copy|Sectional|Full|Mains|Answer|Model|PYQ|Optional|GS)\s*(?:-?\s*[IVX0-9]+)?\b/gi,
+    /\b(?:Paper|Test|Class|Copy|Copies|Sectional|Full|Mains|Answer|Model|PYQ|Optional|GS|VisionIAS|Vision\s+IAS|Next\s+IAS|ForumIAS|MGP|Evaluated|Checked|Rank|AIR|Marks?|Crash|Course|Program|Programme|Booklet|Topper|Toppers|FLT|MTS|NL|TA|TC)\s*(?:-?\s*[IVX0-9]+)?\b/gi,
     ""
   );
   name = name.replace(
-    /\b(?:World History|Modern India|Ancient India|Medieval India|Indian History|Anthropology|Sociology|Geography)\b/gi,
+    /\b(?:World History|Modern India|Ancient India|Medieval India|Indian History|Anthropology|Sociology|Geography|Public Administration|Pub Admn|Anthro|Geomorphology|Climatology|Handwritten|Notes|Society|Theories|Tribal|Guidance IAS|Nice IAS)\b/gi,
     ""
   );
+  name = name.replace(/\b(?:19|20)\d{2}\b/g, " ");
+  name = name.replace(/\b\d{4,}\b/g, " ");
+  name = name.replace(/\b(?:r|t)\s*\d{1,4}\b/gi, " ");
+  name = name.replace(/\b\d+(?:st|nd|rd|th)?\b/gi, " ");
   name = name.replace(/\([^)]*\)/g, "");
   name = name.replace(/\s+/g, " ").trim();
+
+  const curatedAfterClean = curatedTopperName(name);
+  if (curatedAfterClean) return curatedAfterClean;
+  if (isSuppressedTopperName(name)) return null;
 
   if (!name || name.length < 2) {
     const words = raw
@@ -190,7 +287,7 @@ function main() {
       const linkSource = getLinkSource(topper.links);
 
       linkedAnswers.push({
-        topperName: name || topper.filename.replace(/\.pdf$/i, "").slice(0, 40),
+        topperName: name,
         rank: extractRank(topper.filename),
         year: extractYear(topper.filename),
         subjectMarks: topper.subject_marks || null,

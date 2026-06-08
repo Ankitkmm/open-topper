@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { loadOfficialRows } from "../src/lib/official-pyqs";
+import { getSubjectKeyFromValue } from "../src/lib/subject-definitions";
 
 const ROOT = join(__dirname, "..");
 const APP_DATA_DIR = join(ROOT, "data", "app");
@@ -76,6 +77,7 @@ const ESSAY_PROMPT_BLOCKLIST = [
 
 const TOKEN_CACHE = new Map<string, string[]>();
 const CARD_SEMANTIC_CACHE = new Map<string, Set<string>>();
+const CARD_SUBJECT_CACHE = new Map<string, string | null>();
 const ESSAY_TOKEN_CACHE = new Map<string, string[]>();
 const ESSAY_THEME_TOKEN_CACHE = new Map<string, string[]>();
 const ESSAY_CORE_TOKEN_CACHE = new Map<string, string[]>();
@@ -176,6 +178,7 @@ interface CandidateMatch {
   confidence: number;
   reason: string;
   score?: Score | EssayScore;
+  matchedQuestion?: string;
 }
 
 interface AcceptedAnswerLink {
@@ -216,15 +219,23 @@ interface AcceptedAnswerLink {
 }
 
 function main() {
-  const officialRows = loadOfficialRows();
+  // The runtime loader also exposes optional-subject fallback rows sourced from
+  // workspace-index.json so optional pages can use a PYQ-first hierarchy even
+  // before a dedicated official-optional generator exists. The link builder
+  // should not fuzzy-score those rows against the entire answer-card corpus:
+  // each fallback row already has direct workspace copies at runtime, and
+  // scoring thousands of fallback rows would be slow and would bloat the
+  // committed public link dataset.
+  const officialRows = loadOfficialRows().filter((row) => row.sourceKind !== "workspace-optional-fallback");
   const availableCards = uniqueCards(loadPyqCards()).filter((card) => card.linkedInsights.length > 0);
   const cards = availableCards.filter((card) => isUsableExtractedQuestion(card.question));
   const essayCards = availableCards.filter(isEssayCard);
   const answers = loadTopperAnswers();
   const answersByCard = groupAnswersByCard(answers);
   const idf = buildIdf([...officialRows.map((row) => row.question), ...cards.map((card) => card.question)]);
-  const exactIndex = buildExactIndex(cards);
-  const tokenIndex = buildTokenIndex(cards);
+  const cardsBySubject = groupCardsBySubject(cards);
+  const exactIndexBySubject = new Map([...cardsBySubject.entries()].map(([subjectKey, subjectCards]) => [subjectKey, buildExactIndex(subjectCards)]));
+  const tokenIndexBySubject = new Map([...cardsBySubject.entries()].map(([subjectKey, subjectCards]) => [subjectKey, buildTokenIndex(subjectCards)]));
   const essayPromptEntries = buildEssayPromptEntries(essayCards);
   const essayExactIndex = buildEssayExactIndex(essayPromptEntries);
   const essaySignatureIndex = buildEssaySignatureIndex(essayPromptEntries);
@@ -254,6 +265,9 @@ function main() {
       acceptedCards = essayMatches.acceptedCards;
       reviewCandidates = essayMatches.reviewCandidates;
     } else {
+      const subjectCards = cardsBySubject.get(row.subjectKey) || [];
+      const exactIndex = exactIndexBySubject.get(row.subjectKey) || new Map<string, PyqCard[]>();
+      const tokenIndex = tokenIndexBySubject.get(row.subjectKey) || new Map<string, number[]>();
       const exactCards = exactIndex.get(normalizeQuestion(row.question)) || [];
 
       if (exactCards.length > 0) {
@@ -264,7 +278,7 @@ function main() {
           reason: "Normalized official PYQ text exactly matches the extracted topper-answer card.",
         }));
       } else {
-        const scored = scoreCandidates(row, cards, tokenIndex, idf);
+        const scored = scoreCandidates(row, subjectCards, tokenIndex, idf);
         acceptedCards = scored
           .map(({ card, score }) => ({ card, score, matchType: classifyScore(score) }))
           .filter((match): match is { card: PyqCard; score: Score; matchType: MatchType } => Boolean(match.matchType))
@@ -429,6 +443,20 @@ function groupAnswersByCard(records: TopperAnswerRecord[]) {
   return grouped;
 }
 
+function groupCardsBySubject(cards: PyqCard[]) {
+  const grouped = new Map<string, PyqCard[]>();
+
+  for (const card of cards) {
+    const subjectKey = inferCardSubjectKey(card);
+    if (!subjectKey) continue;
+    const bucket = grouped.get(subjectKey) || [];
+    bucket.push(card);
+    grouped.set(subjectKey, bucket);
+  }
+
+  return grouped;
+}
+
 function buildExactIndex(cards: PyqCard[]) {
   const exactIndex = new Map<string, PyqCard[]>();
   for (const card of cards) {
@@ -517,11 +545,12 @@ function matchEssayOfficialRow(
   const exactEntries = exactIndex.get(normalizeQuestion(row.question)) || [];
   if (exactEntries.length > 0) {
     return {
-      acceptedCards: collapseEssayEntries(exactEntries).map((card) => ({
-        card,
+      acceptedCards: collapseEssayEntryMatches(exactEntries).map((entry) => ({
+        card: entry.card,
         matchType: "direct" as const,
         confidence: 1,
         reason: "Normalized official essay prompt exactly matches the extracted topper-answer prompt.",
+        matchedQuestion: entry.prompt,
       })),
       reviewCandidates: [],
     };
@@ -531,11 +560,12 @@ function matchEssayOfficialRow(
   const signatureEntries = signature ? (signatureIndex.get(signature) || []) : [];
   if (signatureEntries.length > 0) {
     return {
-      acceptedCards: collapseEssayEntries(signatureEntries).map((card) => ({
-        card,
+      acceptedCards: collapseEssayEntryMatches(signatureEntries).map((entry) => ({
+        card: entry.card,
         matchType: "direct" as const,
         confidence: 0.98,
         reason: "Essay prompt tokens match after normalization and metadata cleanup.",
+        matchedQuestion: entry.prompt,
       })),
       reviewCandidates: [],
     };
@@ -543,15 +573,16 @@ function matchEssayOfficialRow(
 
   const scored = scoreEssayCandidates(row, entries);
   const acceptedCards = scored
-    .map(({ entry, score }) => ({ card: entry.card, score, matchType: classifyEssayScore(score) }))
-    .filter((match): match is { card: PyqCard; score: EssayScore; matchType: MatchType } => Boolean(match.matchType))
+    .map(({ entry, score }) => ({ entry, card: entry.card, score, matchType: classifyEssayScore(score) }))
+    .filter((match): match is { entry: EssayPromptEntry; card: PyqCard; score: EssayScore; matchType: MatchType } => Boolean(match.matchType))
     .slice(0, THRESHOLD.maxCardsPerOfficial)
-    .map(({ card, score, matchType }) => ({
+    .map(({ entry, card, score, matchType }) => ({
       card,
       matchType,
       confidence: round(Math.max(score.confidence, score.matchFloor)),
       reason: explainEssayScore(score),
       score,
+      matchedQuestion: entry.prompt,
     }));
 
   const reviewCandidates = scored
@@ -570,10 +601,11 @@ function matchEssayOfficialRow(
   return { acceptedCards, reviewCandidates };
 }
 
-function collapseEssayEntries(entries: EssayPromptEntry[]) {
-  const byCard = new Map<string, PyqCard>();
+function collapseEssayEntryMatches(entries: EssayPromptEntry[]) {
+  const byCard = new Map<string, EssayPromptEntry>();
   for (const entry of entries) {
-    if (!byCard.has(entry.card.id)) byCard.set(entry.card.id, entry.card);
+    const existing = byCard.get(entry.card.id);
+    if (!existing || entry.prompt.length < existing.prompt.length) byCard.set(entry.card.id, entry);
   }
   return [...byCard.values()];
 }
@@ -630,11 +662,7 @@ function essayScoreSortValue(score: EssayScore) {
 }
 
 function classifyEssayScore(score: EssayScore): MatchType | null {
-  if (score.sharedPromptTokens.length >= 3 && score.promptCoverage >= 0.5) return "strong";
-  if (score.sharedPromptTokens.length >= 2 && score.promptCoverage >= 0.24 && score.confidence >= 0.22) return "topic-match";
-  if (score.sharedPromptTokens.length >= 1 && score.themeCoverage >= 0.34 && score.promptCoverage >= 0.12 && score.confidence >= 0.24) {
-    return "loose-topic-match";
-  }
+  if (score.sharedPromptTokens.length >= 2 && score.promptCoverage >= 0.86 && score.promptJaccard >= 0.76) return "strong";
   return null;
 }
 
@@ -648,7 +676,7 @@ function explainEssayScore(score: EssayScore) {
 
 function scoreCandidates(
   row: ReturnType<typeof loadOfficialRows>[number],
-  cards: PyqCard[],
+  candidateCards: PyqCard[],
   tokenIndex: Map<string, number[]>,
   idf: Map<string, number>,
 ) {
@@ -677,7 +705,9 @@ function scoreCandidates(
 
   const scored: { card: PyqCard; score: Score }[] = [];
   for (const index of candidateIndexes) {
-    const card = cards[index];
+    const card = candidateCards[index];
+    if (!card) continue;
+    if (!isCardSubjectCompatible(row, card)) continue;
     const score = scoreQuestionPair(row, card, idf);
     if (score.sharedTokens === 0 && score.strongAnchorMatches.length === 0 && score.topicHitCount === 0) continue;
     scored.push({ card, score });
@@ -791,7 +821,7 @@ function toAcceptedAnswer(
   officialQuestionId: string,
   officialQuestion: string,
   answer: TopperAnswerRecord,
-  match: { card: PyqCard; matchType: AcceptedAnswerLink["matchType"]; confidence: number; reason: string },
+  match: { card: PyqCard; matchType: AcceptedAnswerLink["matchType"]; confidence: number; reason: string; matchedQuestion?: string },
 ): AcceptedAnswerLink {
   return {
     officialQuestionId,
@@ -801,7 +831,7 @@ function toAcceptedAnswer(
     matchConfidence: match.confidence,
     matchReason: match.reason,
     officialQuestion,
-    extractedQuestion: answer.extractedQuestion,
+    extractedQuestion: match.matchedQuestion || answer.extractedQuestion,
     paper: answer.paper,
     category: answer.cardCategory,
     syllabusTags: answer.syllabusTags,
@@ -1042,8 +1072,28 @@ function cleanTopicTokens(value: string) {
 }
 
 function isSubjectSignal(row: ReturnType<typeof loadOfficialRows>[number], card: PyqCard) {
-  const paper = card.paper.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return row.subjectKey === paper || card.category.toLowerCase().replace(/\s+/g, "") === row.subjectKey;
+  return isCardSubjectCompatible(row, card);
+}
+
+function isCardSubjectCompatible(row: ReturnType<typeof loadOfficialRows>[number], card: PyqCard) {
+  const subjectKey = inferCardSubjectKey(card);
+  return Boolean(subjectKey && subjectKey === row.subjectKey);
+}
+
+function inferCardSubjectKey(card: PyqCard) {
+  const cached = CARD_SUBJECT_CACHE.get(card.id);
+  if (cached !== undefined) return cached;
+
+  for (const value of [card.category, card.paper]) {
+    const subjectKey = getSubjectKeyFromValue(value || "");
+    if (subjectKey) {
+      CARD_SUBJECT_CACHE.set(card.id, subjectKey);
+      return subjectKey;
+    }
+  }
+
+  CARD_SUBJECT_CACHE.set(card.id, null);
+  return null;
 }
 
 function matchedStrongAnchors(officialQuestion: string, mappedQuestion: string, idf: Map<string, number>) {

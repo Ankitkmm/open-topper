@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { normalizePublicTopperName } from "@/lib/public-records";
 
 type PdfModule = typeof import("pdfjs-dist");
 type LoadedPdfDocument = Awaited<ReturnType<PdfModule["getDocument"]>["promise"]>;
@@ -219,6 +220,7 @@ export function PdfViewerPage({
   const [anchorPageNumber, setAnchorPageNumber] = useState(Math.max(1, initialPage));
   const [pageInputDraft, setPageInputDraft] = useState(String(Math.max(1, initialPage)));
   const [isEditingPageInput, setIsEditingPageInput] = useState(false);
+  const publicTopperName = normalizePublicTopperName(topperName) ?? "Topper copy";
 
   const registerSpreadElement = useCallback((spreadKey: string, element: HTMLDivElement | null) => {
     spreadRefs.current.set(spreadKey, element);
@@ -447,7 +449,7 @@ export function PdfViewerPage({
         <div className="soft-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="overline mb-2">PDF viewer</div>
-            <h1 className="text-2xl sm:text-3xl">{topperName || "Topper copy"}</h1>
+            <h1 className="text-2xl sm:text-3xl">{publicTopperName}</h1>
             <p className="mt-2 text-sm text-secondary">
               OCR/AI study aids can be imperfect. Verify against the original PDF page before relying on summary or matching cues.
             </p>
