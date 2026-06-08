@@ -8,9 +8,6 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ questionId: string }> },
 ) {
-  const sessionError = await requireSessionResponseIfConfigured();
-  if (sessionError) return sessionError;
-
   const limit = await checkRateLimit(req, {
     scope: "detail-official",
     max: getSearchRateLimitMax(),
@@ -25,6 +22,9 @@ export async function GET(
       },
     });
   }
+
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
 
   const { questionId } = await params;
   const question = getOfficialQuestionDetail(questionId);

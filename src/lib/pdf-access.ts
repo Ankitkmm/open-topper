@@ -207,7 +207,11 @@ export function isValidPdfRangeHeader(range: string) {
     return end - start + 1 <= MAX_PDF_RANGE_SPAN_BYTES;
   }
 
-  return true;
+  // Open-ended forward ranges (`bytes=500-` / `bytes=0-`) can force the
+  // upstream/object store and our proxy to stream arbitrarily large responses.
+  // pdf.js can request bounded ranges or suffix ranges; reject open-ended
+  // ranges so every accepted partial response has a capped byte span.
+  return false;
 }
 
 export function isAllowedPdfContentType(contentType: string | null) {

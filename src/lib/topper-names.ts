@@ -7,9 +7,40 @@ interface CuratedTopperNameEntry {
   year?: number;
 }
 
+export interface SourceTopperNameOverride {
+  driveId?: string;
+  filename?: string;
+  sourceDocumentKey?: string;
+  subject?: string;
+  name: string;
+  rank?: number;
+  year?: number;
+  evidence?: string;
+}
+
+export interface AnswerTopperNameOverride {
+  answerId: string;
+  name: string;
+  rank?: number;
+  year?: number;
+  evidence?: string;
+}
+
+export interface SuppressedSourceOverride {
+  driveId?: string;
+  filename?: string;
+  sourceDocumentKey?: string;
+  answerId?: string;
+  reason?: string;
+}
+
 interface TopperNameOverrides {
+  version?: number;
   suppressedNames: string[];
   canonicalNames: CuratedTopperNameEntry[];
+  sourceNameOverrides?: SourceTopperNameOverride[];
+  answerNameOverrides?: AnswerTopperNameOverride[];
+  suppressedSources?: SuppressedSourceOverride[];
 }
 
 export interface CuratedTopperIdentity {
@@ -29,6 +60,7 @@ const GENERIC_NOISE_WORDS = new Set([
   "anonymous",
   "answer",
   "answers",
+  "abhyaas",
   "anthro",
   "anthropology",
   "booklet",
@@ -93,9 +125,11 @@ const GENERIC_NOISE_WORDS = new Set([
   "scanned",
   "sectional",
   "sent",
+  "shot",
   "series",
   "soc",
   "socio",
+  "sure",
   "sociology",
   "ta",
   "tc",

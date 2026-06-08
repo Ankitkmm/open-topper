@@ -19,10 +19,10 @@ export async function GET(
   { params }: { params: Promise<{ answerId: string }> },
 ) {
   const { answerId } = await params;
-  const sessionError = await requireSessionResponseIfConfigured();
-  if (sessionError) return sessionError;
   const accessError = await enforcePdfAccess(req, answerId);
   if (accessError) return accessError;
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
 
   const token = getPdfAccessTokenFromRequest(req, answerId);
   const resolved = resolvePdfSourceForToken(answerId, token);

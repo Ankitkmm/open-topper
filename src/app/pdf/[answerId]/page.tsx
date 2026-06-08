@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { PdfViewerPage } from "@/components/PdfViewerPage";
 import { getPdfTokenCookieName, resolvePdfSourceForToken } from "@/lib/pdf-access";
@@ -15,7 +15,20 @@ export default async function Page({
 }) {
   const { answerId } = await params;
   const { page = "" } = await searchParams;
+  const requestHeaders = await headers();
   const token = (await cookies()).get(getPdfTokenCookieName(answerId))?.value || "";
+
+  if (!isAllowedPdfViewerNavigation(requestHeaders)) {
+    return (
+      <main className="library-page min-h-screen px-6 py-16">
+        <div className="mx-auto max-w-xl soft-panel p-6 text-center" role="alert">
+          <div className="overline mb-3">PDF access</div>
+          <h1 className="text-2xl">PDF could not be opened from this navigation.</h1>
+          <p className="mt-3 text-secondary">Reopen the source from UPSCat so the short reading-session token can be verified.</p>
+        </div>
+      </main>
+    );
+  }
 
   if (shouldFailClosedForMissingAuth()) {
     return (
@@ -61,4 +74,38 @@ export default async function Page({
       sourceStatus={resolved.source.record.sourceStatus || null}
     />
   );
+}
+
+function isAllowedPdfViewerNavigation(requestHeaders: Headers) {
+  const fetchSite = requestHeaders.get("sec-fetch-site")?.trim().toLowerCase();
+  if (fetchSite === "cross-site") return false;
+  if (fetchSite && !["same-origin", "same-site", "none"].includes(fetchSite)) return false;
+
+  const expectedOrigin = requestOrigin(requestHeaders);
+  if (!expectedOrigin) return !requestHeaders.get("origin") && !requestHeaders.get("referer");
+
+  const origin = requestHeaders.get("origin");
+  if (origin && !sameOrigin(origin, expectedOrigin)) return false;
+
+  const referer = requestHeaders.get("referer");
+  if (referer && !sameOrigin(referer, expectedOrigin)) return false;
+
+  return true;
+}
+
+function requestOrigin(requestHeaders: Headers) {
+  const host = (requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "").split(",")[0]?.trim();
+  if (!host || /[\s/\\]/.test(host)) return "";
+  const proto = (requestHeaders.get("x-forwarded-proto") || "").split(",")[0]?.trim().toLowerCase()
+    || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  if (!["http", "https"].includes(proto)) return "";
+  return `${proto}://${host}`;
+}
+
+function sameOrigin(value: string, expectedOrigin: string) {
+  try {
+    return new URL(value).origin === expectedOrigin;
+  } catch {
+    return false;
+  }
 }

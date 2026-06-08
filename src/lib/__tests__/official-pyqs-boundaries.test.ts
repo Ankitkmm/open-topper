@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { __testUtils, getOfficialSubjectPyqShells, type OfficialRow } from '../official-pyqs';
+import { normalizeEssayPromptForMatch } from '../essay-normalization';
 
 const {
+  cleanOptionalFallbackQuestionText,
   extractMatchedEssayPrompt,
   filterPublishableLinksForRow,
   groupRelevantQuestions,
@@ -37,6 +39,28 @@ test('optional official question text gate rejects notes while accepting real PY
   assert.equal(isOptionalOfficialQuestionText('Anthro Society'), false);
   assert.equal(isOptionalOfficialQuestionText('page 12'), false);
   assert.equal(isOptionalOfficialQuestionText('Introduction -> write about the thinker and add diagram'), false);
+});
+
+test('essay prompt normalization is shared for suffixes, quotes, and cannot/can not parity', () => {
+  assert.equal(
+    normalizeEssayPromptForMatch('Technology cannot replace manpower.'),
+    normalizeEssayPromptForMatch('“Technology can not replace manpower.” (CSE 2023, PYQ)'),
+  );
+  assert.notEqual(
+    normalizeEssayPromptForMatch('Technology cannot replace manpower.'),
+    normalizeEssayPromptForMatch('Technology as the silent factor in international relations.'),
+  );
+});
+
+test('optional fallback cleanup removes visible extraction artifacts without rewriting content', () => {
+  assert.equal(
+    cleanOptionalFallbackQuestionText('“QQue: Discuss the role of kinship in tribal social organization. ()”'),
+    'Discuss the role of kinship in tribal social organization.',
+  );
+  assert.equal(
+    cleanOptionalFallbackQuestionText('Q Q5 Explain Weberian bureaucracy.'),
+    'Q5 Explain Weberian bureaucracy.',
+  );
 });
 
 test('essay prompt extraction requires exact or near-exact prompt match and blocks generic topic false positives', () => {

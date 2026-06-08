@@ -1,4 +1,3 @@
-import { IBM_Plex_Mono, Inter, Newsreader } from "next/font/google";
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
@@ -22,27 +21,6 @@ export const metadata: Metadata = {
   },
 };
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const newsreader = Newsreader({
-  subsets: ["latin"],
-  variable: "--font-newsreader",
-  display: "swap",
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  variable: "--font-plex",
-  display: "swap",
-  weight: ["400", "500", "600"],
-});
-
 export default function RootLayout({
   children,
 }: {
@@ -53,7 +31,6 @@ export default function RootLayout({
       lang="en"
       data-scroll-behavior="smooth"
       suppressHydrationWarning
-      className={`${inter.variable} ${newsreader.variable} ${ibmPlexMono.variable}`}
     >
       <body suppressHydrationWarning>
         <AppShell>{children}</AppShell>

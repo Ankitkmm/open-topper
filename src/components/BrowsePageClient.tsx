@@ -14,8 +14,14 @@ export function BrowsePageClient({
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
   const category = searchParams.get("category") || "";
-  const [fetchedQuestions, setFetchedQuestions] = useState<SubjectPyqCard[] | null>(null);
   const shouldFetch = Boolean(query.trim() || category.trim());
+  const requestKey = `${query}\n${category}`;
+  const [resultState, setResultState] = useState<{
+    key: string;
+    questions: SubjectPyqCard[];
+    notice: string | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!shouldFetch) return;
@@ -33,10 +39,28 @@ export function BrowsePageClient({
           cache: "no-store",
         });
         const payload = await response.json() as OfficialShellSearchResponse | { error?: string };
-        if (!response.ok || !("results" in payload)) return;
-        if (!cancelled) setFetchedQuestions(payload.results);
+        if (!response.ok || !("results" in payload)) {
+          throw new Error("Search results could not be loaded.");
+        }
+        if (!cancelled) {
+          setResultState({
+            key: requestKey,
+            questions: payload.results,
+            notice: payload.truncated && payload.limit
+              ? `Showing first ${payload.limit.toLocaleString()} matches. Add more words to narrow results.`
+              : null,
+            error: null,
+          });
+        }
       } catch {
-        if (!cancelled) setFetchedQuestions([]);
+        if (!cancelled) {
+          setResultState({
+            key: requestKey,
+            questions: [],
+            notice: null,
+            error: "Search results could not be loaded. Try again in a moment.",
+          });
+        }
       }
     }
 
@@ -44,15 +68,19 @@ export function BrowsePageClient({
     return () => {
       cancelled = true;
     };
-  }, [category, query, shouldFetch]);
+  }, [category, query, requestKey, shouldFetch]);
 
-  const questions = shouldFetch ? (fetchedQuestions ?? initialQuestions) : initialQuestions;
+  const activeResult = resultState?.key === requestKey ? resultState : null;
+  const questions = shouldFetch ? (activeResult?.questions ?? []) : initialQuestions;
 
   return (
     <OfficialQuestionCards
       questions={questions}
       totalFiltered={questions.length}
       searchParams={{ q: query, category }}
+      isLoadingResults={shouldFetch && !activeResult}
+      resultNotice={activeResult?.notice ?? null}
+      queryError={activeResult?.error ?? null}
     />
   );
 }

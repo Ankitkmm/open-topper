@@ -17,6 +17,10 @@ export interface ShellSearchResponse<T> {
   dataset: ShellSearchDataset;
   total: number;
   nextCursor: string | null;
+  requestedLimit?: number;
+  limit?: number;
+  returnedCount?: number;
+  truncated?: boolean;
   results: T[];
 }
 

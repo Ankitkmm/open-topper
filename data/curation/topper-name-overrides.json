@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "notes": "Small public-display curation layer for topper names. Suppressed names are labels/placeholders, not people. Canonical entries are deterministic person-name cleanups and may carry rank/year hints for build scripts.",
   "suppressedNames": [
     "anonymous topper",
@@ -35,19 +35,66 @@
     "class",
     "checked",
     "sent",
-    "scan"
+    "scan",
+    "abhyaas",
+    "compressed",
+    "sure shot"
   ],
   "canonicalNames": [
-    { "match": "damanpreet arora", "name": "Damanpreet Arora" },
-    { "match": "raj kumar mahto", "name": "Raj Kumar Mahto" },
-    { "match": "sanjeev kumar", "name": "Sanjeev Kumar" },
-    { "match": "abhi jain", "name": "Abhi Jain" },
-    { "match": "siddhartha srivastava", "name": "Siddhartha Srivastava" },
-    { "match": "siddharth srivastava", "name": "Siddhartha Srivastava" },
-    { "match": "aradhana chouhan", "name": "Aradhana Chouhan", "rank": 251 },
-    { "match": "kasturi saha", "name": "Kasturi Saha" },
-    { "match": "atul tyagi", "name": "Atul Tyagi" },
-    { "match": "sairaj mishra", "name": "Sairaj Mishra" },
-    { "match": "asad zuberi", "name": "Asad Zuberi", "rank": 86 }
-  ]
+    {
+      "match": "damanpreet arora",
+      "name": "Damanpreet Arora"
+    },
+    {
+      "match": "raj kumar mahto",
+      "name": "Raj Kumar Mahto"
+    },
+    {
+      "match": "sanjeev kumar",
+      "name": "Sanjeev Kumar"
+    },
+    {
+      "match": "abhi jain",
+      "name": "Abhi Jain"
+    },
+    {
+      "match": "siddhartha srivastava",
+      "name": "Siddhartha Srivastava"
+    },
+    {
+      "match": "siddharth srivastava",
+      "name": "Siddhartha Srivastava"
+    },
+    {
+      "match": "aradhana chouhan",
+      "name": "Aradhana Chouhan",
+      "rank": 251
+    },
+    {
+      "match": "kasturi saha",
+      "name": "Kasturi Saha"
+    },
+    {
+      "match": "atul tyagi",
+      "name": "Atul Tyagi"
+    },
+    {
+      "match": "sairaj mishra",
+      "name": "Sairaj Mishra"
+    },
+    {
+      "match": "asad zuberi",
+      "name": "Asad Zuberi",
+      "rank": 86
+    },
+    {
+      "match": "shakti dubey",
+      "name": "Shakti Dubey",
+      "rank": 1,
+      "year": 2024
+    }
+  ],
+  "sourceNameOverrides": [],
+  "answerNameOverrides": [],
+  "suppressedSources": []
 }

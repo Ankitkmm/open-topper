@@ -29,16 +29,24 @@ export function OfficialSubjectPageClient({
   const query = searchParams.get("q") || "";
   const selectedSyllabusId = searchParams.get("syllabus") || "";
   const focusedQuestionId = searchParams.get("question") || "";
-  const [fetchedQuestions, setFetchedQuestions] = useState<SubjectPyqCard[] | null>(null);
   const shouldFetchFocusedQuestion = Boolean(
     focusedQuestionId && !initialQuestions.some((question) => question.id === focusedQuestionId),
   );
   const shouldFetchResults = Boolean(query.trim() || selectedSyllabusId || shouldFetchFocusedQuestion);
+  const requestKey = `${subjectKey}\n${query}\n${selectedSyllabusId}\n${focusedQuestionId}`;
+  const [resultState, setResultState] = useState<{
+    key: string;
+    questions: SubjectPyqCard[];
+    notice: string | null;
+    error: string | null;
+    focusedMissing: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
+      let focusedMissing = false;
       if (!query.trim() && !selectedSyllabusId) {
         let nextQuestions = initialQuestions;
         if (shouldFetchFocusedQuestion) {
@@ -54,12 +62,16 @@ export function OfficialSubjectPageClient({
             const detailPayload = await detailResponse.json() as OfficialShellSearchResponse | { error?: string };
             if (detailResponse.ok && "results" in detailPayload && detailPayload.results[0]) {
               nextQuestions = [detailPayload.results[0], ...initialQuestions];
+            } else {
+              focusedMissing = true;
             }
           } catch {
-            // Keep the static shell if the deep-link lookup fails.
+            focusedMissing = true;
           }
         }
-        if (!cancelled) setFetchedQuestions(nextQuestions);
+        if (!cancelled) {
+          setResultState({ key: requestKey, questions: nextQuestions, notice: null, error: null, focusedMissing });
+        }
         return;
       }
 
@@ -74,8 +86,13 @@ export function OfficialSubjectPageClient({
           cache: "no-store",
         });
         const payload = await response.json() as OfficialShellSearchResponse | { error?: string };
-        if (!response.ok || !("results" in payload) || cancelled) return;
+        if (!response.ok || !("results" in payload) || cancelled) {
+          throw new Error("PYQs could not be loaded.");
+        }
         let nextQuestions = payload.results;
+        const notice = payload.truncated && payload.limit
+          ? `Showing first ${payload.limit.toLocaleString()} matches. Add more words to narrow results.`
+          : null;
         if (focusedQuestionId && !nextQuestions.some((question) => question.id === focusedQuestionId)) {
           try {
             const detailResponse = await fetch(buildShellSearchUrl({
@@ -89,14 +106,26 @@ export function OfficialSubjectPageClient({
             const detailPayload = await detailResponse.json() as OfficialShellSearchResponse | { error?: string };
             if (detailResponse.ok && "results" in detailPayload && detailPayload.results[0]) {
               nextQuestions = [detailPayload.results[0], ...nextQuestions];
+            } else {
+              focusedMissing = true;
             }
           } catch {
-            // Keep the search results if the deep-link lookup fails.
+            focusedMissing = true;
           }
         }
-        if (!cancelled) setFetchedQuestions(nextQuestions);
+        if (!cancelled) {
+          setResultState({ key: requestKey, questions: nextQuestions, notice, error: null, focusedMissing });
+        }
       } catch {
-        if (!cancelled) setFetchedQuestions([]);
+        if (!cancelled) {
+          setResultState({
+            key: requestKey,
+            questions: [],
+            notice: null,
+            error: "PYQs could not be loaded. Try again in a moment.",
+            focusedMissing: false,
+          });
+        }
       }
     }
 
@@ -106,9 +135,13 @@ export function OfficialSubjectPageClient({
     return () => {
       cancelled = true;
     };
-  }, [focusedQuestionId, initialQuestions, query, selectedSyllabusId, shouldFetchFocusedQuestion, shouldFetchResults, subjectKey]);
+  }, [focusedQuestionId, initialQuestions, query, requestKey, selectedSyllabusId, shouldFetchFocusedQuestion, shouldFetchResults, subjectKey]);
 
-  const questions = shouldFetchResults ? (fetchedQuestions ?? initialQuestions) : initialQuestions;
+  const activeResult = resultState?.key === requestKey ? resultState : null;
+  const questions = useMemo(
+    () => shouldFetchResults ? (activeResult?.questions ?? []) : initialQuestions,
+    [activeResult, initialQuestions, shouldFetchResults],
+  );
 
   const workspaceKey = useMemo(
     () => `${subjectKey}:${query}:${selectedSyllabusId}:${focusedQuestionId}:${questions[0]?.id || ""}:${questions.length}`,
@@ -128,6 +161,10 @@ export function OfficialSubjectPageClient({
       focusedQuestionId={focusedQuestionId}
       progressQuestionIds={progressQuestionIds}
       baseHref={baseHref}
+      isLoadingResults={shouldFetchResults && !activeResult}
+      resultNotice={activeResult?.notice ?? null}
+      queryError={activeResult?.error ?? null}
+      focusedQuestionMissing={activeResult?.focusedMissing ?? false}
     />
   );
 }

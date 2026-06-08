@@ -1193,6 +1193,7 @@ export const __testUtils = {
       .filter((link) => isPublishableLink(row, link));
   },
   extractMatchedEssayPrompt,
+  cleanOptionalFallbackQuestionText,
   isOptionalOfficialQuestionText,
   rankOfficialRow,
   rankOfficialTopicMatch,

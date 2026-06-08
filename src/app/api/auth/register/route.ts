@@ -10,10 +10,6 @@ export async function POST(req: NextRequest) {
   const requestError = requireJsonMutationRequest(req);
   if (requestError) return requestError;
 
-  if (!isEmailPasswordAuthConfigured()) {
-    return Response.json({ error: "Sign-in is temporarily disabled for QA." }, { status: 503, headers: PRIVATE_JSON_HEADERS });
-  }
-
   const limit = await checkRateLimit(req, {
     scope: "auth-register",
     max: getAuthRateLimitMax(),
@@ -27,6 +23,10 @@ export async function POST(req: NextRequest) {
         "Retry-After": String(Math.max(1, Math.ceil((limit.resetAt - Date.now()) / 1000))),
       },
     });
+  }
+
+  if (!isEmailPasswordAuthConfigured()) {
+    return Response.json({ error: "Sign-in is temporarily disabled for QA." }, { status: 503, headers: PRIVATE_JSON_HEADERS });
   }
 
   const bodyResult = await readBoundedJson<{ email?: string; password?: string; name?: string }>(req);

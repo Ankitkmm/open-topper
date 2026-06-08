@@ -24,9 +24,23 @@ interface OfficialSubjectWorkspaceProps {
   focusedQuestionId?: string;
   progressQuestionIds?: string[];
   baseHref: string;
+  isLoadingResults?: boolean;
+  resultNotice?: string | null;
+  queryError?: string | null;
+  focusedQuestionMissing?: boolean;
 }
 
+const OPTIONAL_SUBJECTS = new Set<SubjectKey>([
+  "anthropology",
+  "geography",
+  "history",
+  "psir",
+  "public-administration",
+  "sociology",
+]);
+
 export function OfficialSubjectWorkspace({
+  subjectKey,
   title,
   description,
   questions,
@@ -36,6 +50,10 @@ export function OfficialSubjectWorkspace({
   focusedQuestionId = "",
   progressQuestionIds,
   baseHref,
+  isLoadingResults = false,
+  resultNotice = null,
+  queryError = null,
+  focusedQuestionMissing = false,
 }: OfficialSubjectWorkspaceProps) {
   const router = useRouter();
   const { authAvailable, isAuthenticated, progressMap, trackActivity } = useUserData();
@@ -70,6 +88,7 @@ export function OfficialSubjectWorkspace({
     const element = document.getElementById(cardElementId(questionId));
     if (!element) return;
     element.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (element instanceof HTMLElement) element.focus({ preventScroll: true });
   }, []);
 
   const redirectToSignIn = useCallback(() => {
@@ -202,6 +221,11 @@ export function OfficialSubjectWorkspace({
               <span className="mono-stat text-secondary">{linkedCopyCount.toLocaleString()}</span> linked topper copies
               {activeSyllabusLabel ? <> · filtered to {activeSyllabusLabel}</> : null}
             </p>
+            {OPTIONAL_SUBJECTS.has(subjectKey) && (
+              <p className="workspace-disclaimer mt-4 max-w-3xl text-sm leading-7 text-secondary">
+                Some optional PYQs are best-available extracted rows linked to topper copies. Authoritative optional source migration is in progress.
+              </p>
+            )}
           </div>
           <div className="w-full max-w-xs">
             <SubjectProgress questionIds={progressQuestionIds || questions.map((question) => makeProgressItemId("pyq", question.id))} label="Overall progress" />
@@ -266,6 +290,7 @@ export function OfficialSubjectWorkspace({
               <div className="relative">
                 <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
                 <input
+                  aria-label={`Search official PYQs in ${title}`}
                   name="q"
                   defaultValue={query}
                   placeholder={`Search official PYQs in ${title}`}
@@ -286,7 +311,31 @@ export function OfficialSubjectWorkspace({
               </p>
             </form>
 
-            {viewerError && <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary">{viewerError}</div>}
+            {viewerError && <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary" role="alert">{viewerError}</div>}
+
+            {isLoadingResults && (
+              <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary" role="status" aria-live="polite">
+                Searching PYQs…
+              </div>
+            )}
+
+            {resultNotice && !isLoadingResults && (
+              <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary" role="status" aria-live="polite">
+                {resultNotice}
+              </div>
+            )}
+
+            {queryError && !isLoadingResults && (
+              <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary" role="alert">
+                {queryError}
+              </div>
+            )}
+
+            {focusedQuestionMissing && !isLoadingResults && (
+              <div className="soft-panel-muted mt-4 p-4 text-sm text-secondary" role="alert">
+                Linked PYQ could not be found.
+              </div>
+            )}
 
             <div className={`mt-5 grid gap-4${isPending ? " is-pending" : ""}`} aria-busy={isPending}>
               {orderedQuestions.map((question, index) => {
@@ -295,8 +344,15 @@ export function OfficialSubjectWorkspace({
                 const detail = detailsById.get(question.id) || question;
                 const questionError = questionErrors.get(question.id) || null;
                 const pyqProgressId = makeProgressItemId("pyq", question.id);
+                const panelId = matchesPanelId(question.id);
                 return (
-                  <article key={question.id} id={cardElementId(question.id)} className="pyq-card overflow-hidden" data-done={isProgressDone(progressMap, "pyq", question.id)}>
+                  <article
+                    key={question.id}
+                    id={cardElementId(question.id)}
+                    className="pyq-card overflow-hidden"
+                    data-done={isProgressDone(progressMap, "pyq", question.id)}
+                    tabIndex={focusedQuestionId === question.id ? -1 : undefined}
+                  >
                     <div className="grid gap-4 p-5 sm:grid-cols-[40px_minmax(0,1fr)_auto] sm:gap-5">
                       <div className="mono-stat hidden h-9 w-9 place-items-center rounded-full bg-[var(--accent-soft)] text-xs text-accent sm:grid">
                         {String(index + 1).padStart(2, "0")}
@@ -325,6 +381,8 @@ export function OfficialSubjectWorkspace({
                         <button
                           type="button"
                           className={isOpen ? "btn-secondary" : "btn-primary"}
+                          aria-expanded={isOpen}
+                          aria-controls={panelId}
                           onClick={() => {
                             const opening = !isOpen;
                             setOpenPyqs((current) => toggleSet(current, question.id));
@@ -340,26 +398,29 @@ export function OfficialSubjectWorkspace({
                     </div>
 
                     {isOpen && (
-                      <div className="animate-fade-in border-t border-terminal p-5">
+                      <div id={panelId} className="animate-fade-in border-t border-terminal p-5">
                         {isLoading && !detailsById.has(question.id) && (
-                          <div className="soft-panel-muted flex items-center gap-3 p-4 text-sm text-secondary">
+                          <div className="soft-panel-muted flex items-center gap-3 p-4 text-sm text-secondary" role="status" aria-live="polite">
                             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
                             Loading relevant copies…
                           </div>
                         )}
 
                         {questionError && !isLoading && (
-                          <div className="soft-panel-muted p-4 text-sm text-secondary">{questionError}</div>
+                          <div className="soft-panel-muted p-4 text-sm text-secondary" role="alert">{questionError}</div>
                         )}
 
                         {!isLoading && !questionError && detail.relevantQuestions.length > 0 && (
                           <div className="grid gap-4">
-                            {detail.relevantQuestions.map((relevant, relevantIndex) => (
-                              <article key={relevant.id} className="soft-panel-muted relevant-card p-4" data-done={isProgressDone(progressMap, "relevant_question", relevant.id)}>
+                            {detail.relevantQuestions.map((relevant, relevantIndex) => {
+                              const isPossibleRelated = relevant.matchType === "loose-topic-match" && relevant.matchConfidence < 0.5;
+                              return (
+                                <article key={relevant.id} className="soft-panel-muted relevant-card p-4" data-done={isProgressDone(progressMap, "relevant_question", relevant.id)}>
                                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="overline">Relevant topper answer {relevantIndex + 1}</span>
+                                    <span className="overline">{isPossibleRelated ? "Possible related answer" : "Relevant topper answer"} {relevantIndex + 1}</span>
                                     <span className="study-badge">{Math.round(relevant.matchConfidence * 100)}% match</span>
+                                    {isPossibleRelated && <span className="study-badge">Needs review</span>}
                                     {relevant.sourceAvailableCount > 0 && <span className="study-badge study-badge-accent">{relevant.sourceAvailableCount} PDFs</span>}
                                   </div>
                                   <ProgressToggle itemId={makeProgressItemId("relevant_question", relevant.id)} />
@@ -383,8 +444,9 @@ export function OfficialSubjectWorkspace({
                                     />
                                   ))}
                                 </div>
-                              </article>
-                            ))}
+                                </article>
+                              );
+                            })}
                           </div>
                         )}
 
@@ -400,9 +462,9 @@ export function OfficialSubjectWorkspace({
               })}
             </div>
 
-            {questions.length === 0 && (
+            {!isLoadingResults && questions.length === 0 && (
               <div className="soft-panel-muted mt-5 px-6 py-20 text-center text-secondary">
-                No official PYQs matched this topic and search.
+                {focusedQuestionMissing ? "Linked PYQ could not be found." : "No official PYQs matched this topic and search."}
               </div>
             )}
           </div>
@@ -448,7 +510,13 @@ function TopperCopyCard({
         <div className="flex flex-wrap gap-2 lg:justify-end">
           <ProgressToggle itemId={makeProgressItemId("topper_copy", copy.answerId)} />
           {summaryAvailable && (
-            <button type="button" className="btn-secondary" onClick={onToggleSummary}>
+            <button
+              type="button"
+              className="btn-secondary"
+              aria-expanded={summaryOpen}
+              aria-controls={summaryPanelId(copy.answerId)}
+              onClick={onToggleSummary}
+            >
               <Sparkles size={15} aria-hidden="true" />
               {summaryOpen ? "Hide summary" : "Summary"}
             </button>
@@ -466,7 +534,7 @@ function TopperCopyCard({
 
       {summaryOpen && summaryAvailable && (
         <>
-          <div className="summary-box mt-4 p-4 text-sm leading-7 text-secondary">{copy.interpretation}</div>
+          <div id={summaryPanelId(copy.answerId)} className="summary-box mt-4 p-4 text-sm leading-7 text-secondary">{copy.interpretation}</div>
           <p className="mt-3 text-xs text-muted">
             Summary is OCR/AI-assisted. Verify with the original PDF page before relying on it.
           </p>
@@ -478,6 +546,14 @@ function TopperCopyCard({
 
 function cardElementId(id: string) {
   return `pyq-${id.replace(/[^a-zA-Z0-9_-]+/g, "_")}`;
+}
+
+function matchesPanelId(id: string) {
+  return `pyq-matches-${id.replace(/[^a-zA-Z0-9_-]+/g, "_")}`;
+}
+
+function summaryPanelId(id: string) {
+  return `copy-summary-${id.replace(/[^a-zA-Z0-9_-]+/g, "_")}`;
 }
 
 function isProgressDone(progressMap: Record<string, { done?: boolean }>, type: ProgressItemType, id: string) {

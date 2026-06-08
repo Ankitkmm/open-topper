@@ -135,8 +135,9 @@ function PageCanvas({
 
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.style.width = isDesktop ? `${Math.floor(viewport.width)}px` : "100%";
+        canvas.style.height = isDesktop ? `${Math.floor(viewport.height)}px` : "auto";
+        canvas.style.maxWidth = "100%";
 
         const task = page.render({
           canvas,
@@ -162,7 +163,7 @@ function PageCanvas({
       cancelled = true;
       renderTaskRef.current?.cancel?.();
     };
-  }, [pageNumber, pdfDocument, scale]);
+  }, [isDesktop, pageNumber, pdfDocument, scale]);
 
   return (
     <PageShell
@@ -178,7 +179,7 @@ function PageCanvas({
         </div>
       )}
       {status === "error" && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-secondary">
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-secondary" role="alert">
           <div>
             <p className="font-semibold text-primary">Page {pageNumber} could not be rendered.</p>
             <p className="mt-2">{error}</p>
@@ -187,7 +188,7 @@ function PageCanvas({
       )}
       <canvas
         ref={canvasRef}
-        className={status === "ready" ? "block" : "invisible absolute inset-0"}
+        className={status === "ready" ? "block max-w-full" : "invisible absolute inset-0 max-w-full"}
         aria-label={`PDF page ${pageNumber}`}
       />
     </PageShell>
@@ -518,13 +519,13 @@ export function PdfViewerPage({
 
         <div ref={scrollContainerRef} className="soft-panel h-[72vh] overflow-auto p-4 sm:h-[78vh] sm:p-6">
           {loading && (
-            <div className="flex min-h-full flex-col items-center justify-center gap-3 text-secondary">
+            <div className="flex min-h-full flex-col items-center justify-center gap-3 text-secondary" role="status" aria-live="polite">
               <Loader2 size={24} className="animate-spin" aria-hidden="true" />
               <p>Loading document…</p>
             </div>
           )}
           {error && !loading && (
-            <div className="flex min-h-full items-center justify-center">
+            <div className="flex min-h-full items-center justify-center" role="alert">
               <div className="max-w-xl text-center text-secondary">
                 <p className="font-semibold text-primary">PDF could not be loaded.</p>
                 <p className="mt-2 text-sm">{error}</p>

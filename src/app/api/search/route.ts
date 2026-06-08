@@ -19,6 +19,8 @@ const PRIVATE_SEARCH_HEADERS = {
   "Cache-Control": "private, no-store",
   "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet, noimageindex",
 };
+const DEFAULT_SEARCH_LIMIT = 40;
+const MAX_SEARCH_LIMIT = 1000;
 
 export async function GET(req: NextRequest) {
   const limitState = await checkRateLimit(req, {
@@ -42,8 +44,8 @@ export async function GET(req: NextRequest) {
   const subjectKey = getSubjectKeyFromValue(subject);
   const questionId = boundedParam(req.nextUrl.searchParams.get("questionId"), 160);
   const syllabusId = boundedParam(req.nextUrl.searchParams.get("syllabusId") || req.nextUrl.searchParams.get("syllabus"), 160);
-  const parsedLimit = Number.parseInt(boundedParam(req.nextUrl.searchParams.get("limit"), 4) || "40", 10);
-  const limit = Math.min(120, Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : 40));
+  const requestedLimit = parseRequestedLimit(req.nextUrl.searchParams.get("limit"));
+  const limit = Math.min(MAX_SEARCH_LIMIT, Math.max(1, requestedLimit));
   const query = boundedParam(req.nextUrl.searchParams.get("q"), 500);
 
   const results = dataset === "official"
@@ -55,10 +57,19 @@ export async function GET(req: NextRequest) {
     total: results.length,
     nextCursor: null,
     query,
+    requestedLimit,
+    limit,
+    returnedCount: results.length,
+    truncated: results.length >= limit,
     results,
   }, {
     headers: PRIVATE_SEARCH_HEADERS,
   });
+}
+
+function parseRequestedLimit(value: string | null) {
+  const parsed = Number.parseInt(boundedParam(value, 5) || String(DEFAULT_SEARCH_LIMIT), 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_SEARCH_LIMIT;
 }
 
 async function searchOfficialShells(options: {

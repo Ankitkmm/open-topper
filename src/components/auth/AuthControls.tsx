@@ -24,7 +24,7 @@ export function AuthControls({ compact = false }: { compact?: boolean }) {
   const title = isAuthenticated && userEmail ? `Signed in as ${userEmail}` : undefined;
 
   async function handleSignOut() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/auth/logout", { method: "POST", body: "" });
     window.location.assign("/");
   }
 

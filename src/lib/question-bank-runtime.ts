@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "./public-records";
 import { bestTokenMatchScore, matchesSearchTerm, searchTerms, searchTokens } from "./search-text";
 import { type SubjectKey, getSubjectDefinition, getSubjectDefinitions } from "./subject-definitions";
 
@@ -144,9 +145,10 @@ export function getWorkspaceQuestionById(questionId: string) {
 }
 
 export function toPublicWorkspaceCopy(copy: WorkspaceCopy): PublicWorkspaceCopy {
+  const publicTopperName = normalizePublicTopperName(copy.topperName);
   return {
     answerId: copy.answerId,
-    topperName: copy.topperName,
+    topperName: publicTopperName ?? PUBLIC_TOPPER_NAME_FALLBACK,
     rank: copy.rank,
     year: copy.year,
     institute: copy.institute,

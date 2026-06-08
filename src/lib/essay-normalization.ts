@@ -63,7 +63,7 @@ export function normalizeEssayPromptForMatch(value: string) {
 }
 
 export function essayPromptTokensForMatch(value: string) {
-  const normalizedPrompt = value.includes(" ") ? value : normalizeEssayPromptForMatch(value);
+  const normalizedPrompt = normalizeEssayPromptForMatch(value);
   const seen = new Set<string>();
   const out: string[] = [];
 

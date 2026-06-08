@@ -111,6 +111,19 @@ test("workspace public detail DTO allow-lists fields and strips private search/s
   assertNoForbiddenMarkers(dto);
 });
 
+test("workspace public detail DTO normalizes non-person topper labels server-side", () => {
+  const question = makeQuestion();
+  question.linkedInsights[0] = {
+    ...question.linkedInsights[0],
+    topperName: "Copies",
+  };
+
+  const dto = toPublicWorkspaceQuestion(question);
+  assert.equal(dto.linkedInsights[0]?.topperName, "Topper copy");
+  assertNoForbiddenMarkers(dto);
+  assert.ok(!JSON.stringify(dto).includes("Copies"));
+});
+
 test("workspace shell DTO strips search text and all linked copy metadata", () => {
   const shell = toWorkspaceQuestionShell(makeQuestion());
 

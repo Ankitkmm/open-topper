@@ -3,191 +3,207 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-08 23:59 IST · By: Codex
+Last updated: 2026-06-09 01:58 IST · By: Codex
 
 ## Summary
 
-**Security/PYQ/OCR hardening state is verified and ready for local commit.** The official-PYQ
-builder bug was fixed, generated data was rebuilt, full app verification passed, and the OCR sprint
-advanced as far as the configured credentials allow.
+Production hardening and data-quality stabilization for UPSCat/Open Topper has been implemented and
+prepared as a single staged commit candidate on branch `codex/release-hardening-ocr-2026-06-08`.
 
-Paid OCR did **not** proceed to pilot/full because the API verification gate correctly blocked direct
-OpenAI use with the current local credentials/config. No page-level OCR spend occurred.
+The staged work covers:
 
-## What completed this pass
+1. Security/auth/PDF boundary hardening.
+2. Official PYQ link health checks and shared Essay normalization.
+3. Optional fallback cleanup and provenance UI disclosure.
+4. Topper-name schema v2/source-override hooks and public DTO normalization.
+5. Browse/subject/search/PDF/account UI behavior and accessibility fixes.
+6. OCR worker robustness improvements only; no OCR completion is claimed.
+7. Build determinism by removing build-time Google Fonts fetching.
 
-### Code/data fixes
+No API key is present in repo files. The key previously provided in chat must not be echoed, written
+to docs/env/logs, committed, or intentionally wasted.
 
-- Fixed `scripts/build-official-pyq-links.ts` subject-scoped fuzzy scoring bug:
-  - subject token indexes are now scored against `subjectCards`, not the global card array.
-  - regenerated official PYQ links recovered healthy coverage.
-- Hardened `scripts/full_openai_ocr.py` active defaults:
-  - default OCR inputs are now local-pdfs only: Acer mirror first, repo local corpus second.
-  - `downloaded-pdfs` requires explicit `--input-dir` / `OCR_INPUT_DIRS` opt-in.
-  - active input scope marker is `local-pdfs-only-v2`.
-- Rebuilt PYQ app data and runtime PDF data.
-- Confirmed `scripts/check-no-public-pdf-url-leaks.js` is part of the build path and must be committed with `package.json`.
+## Current git state expected after this handoff
 
-### OCR execution gates
-
-Run root for this pass:
+Staged for commit:
 
 ```text
-/Volumes/Acer/open-topper/extracted_data/ocr_openai/run_20260608T233641
+data/app/public-official-pyq-links.json
+data/app/workspace-index.json
+data/curation/topper-name-overrides.json
+docs/ai-decisions.md
+docs/ai-handoff.md
+scripts/audit-topper-names.js
+scripts/build-mappings.js
+scripts/build-official-pyq-links.ts
+scripts/build-pyq-app-data.js
+scripts/check-official-pyq-link-health.js
+scripts/full_openai_ocr.py
+src/app/account/page.tsx
+src/app/api/answer-source/[answerId]/route.ts
+src/app/api/answer-source/route.ts
+src/app/api/auth/login/route.ts
+src/app/api/auth/logout/route.ts
+src/app/api/auth/register/route.ts
+src/app/api/official-questions/[questionId]/route.ts
+src/app/api/progress/route.ts
+src/app/api/search/route.ts
+src/app/api/workspace-questions/[questionId]/route.ts
+src/app/globals.css
+src/app/layout.tsx
+src/app/pdf/[answerId]/page.tsx
+src/components/BrowsePageClient.tsx
+src/components/OfficialQuestionCards.tsx
+src/components/OfficialSubjectPageClient.tsx
+src/components/OfficialSubjectWorkspace.tsx
+src/components/PdfViewerPage.tsx
+src/components/auth/AccountPanel.tsx
+src/components/auth/AuthControls.tsx
+src/lib/__tests__/official-pyqs-boundaries.test.ts
+src/lib/__tests__/public-boundary.test.ts
+src/lib/__tests__/security-hardening.test.ts
+src/lib/essay-normalization.ts
+src/lib/official-pyqs.ts
+src/lib/pdf-access.ts
+src/lib/question-bank-runtime.ts
+src/lib/shell-search.ts
+src/lib/topper-names.ts
 ```
 
-Local-only estimate completed successfully:
+Untracked files intentionally left unstaged and should remain out of the commit unless separately
+reviewed:
 
 ```text
-Input dirs: /Volumes/Acer/open-topper/local-pdfs
-all PDFs/pages:      2541 / 125654
-selected PDFs/pages: 2541 / 125654
-selected size:       31.494 GiB
-cache valid/current: 0
-remaining pages:     125654
-output dir:          /Volumes/Acer/open-topper/extracted_data/ocr_openai/run_20260608T233641
+how does one do this, Based on the video transcript, the cre….md
+transit_station_collector.py
 ```
 
-API verification status:
+## What changed
 
-- First direct run refused because direct OpenAI requires explicit `--allow-direct-openai`.
-- Rerun with `--allow-direct-openai` previously exposed a stale script guard; the worker now permits `--verify-key` to auto-discover a likely vision model when `OCR_OPENAI_MODEL` is unset. The current blocker is the direct OpenAI key returning 401 `invalid_api_key`.
-- A manual `/v1/models` request to `https://api.openai.com` using local `OPENAI_API_KEY` failed with HTTP 401 Unauthorized.
-- Therefore pilot/full OCR were correctly **not started**.
+### Security/auth/PDF
 
-Current OCR outputs from this pass:
+- Added cheap pre-auth rate limiting to auth/detail/PDF/progress paths where practical.
+- Hardened logout with same-origin/body-size/rate-limit checks.
+- `GET /api/progress` now filters by `user_id`.
+- `PUT /api/progress` now rejects invalid `entries` payloads and safely ignores non-object entries.
+- PDF viewer route uses async Next headers and blocks explicit cross-site `Sec-Fetch-Site`, invalid
+  `Origin`, and invalid `Referer` before auth/source resolution.
+- PDF byte-range validation now rejects open-ended forward ranges such as `bytes=500-` while keeping
+  bounded ranges and suffix ranges under the 32 MiB cap.
+- Added/fixed security regression tests.
 
-- no page cache JSON files
-- no per-PDF aggregate Markdown/JSON
-- no OCR record export
-- private estimate/manifest files only under the Acer run root
+### Official PYQ / Essay / optional data
 
-## Generated data after fix
+- Added `scripts/check-official-pyq-link-health.js` with global and per-category floors.
+- Regenerated `data/app/public-official-pyq-links.json` and preserved high coverage:
+  - `officialQuestionCount`: 958
+  - `linkedQuestionCount`: 841
+  - `linkedCopyCount`: 18,234
+  - `sourceAvailableCount`: 16,513
+  - category linked-copy counts: GS1 6,640; GS2 5,421; GS3 5,262; GS4 908; Essay 3.
+- Shared Essay prompt normalization between runtime/build code; covered `cannot` vs `can not`,
+  decorative quotes, `(CSE 2023, PYQ)` suffixes, and false-positive rejection.
+- Added optional fallback text cleanup coverage for `QQue`, leading quotes, empty trailing `()`, and
+  duplicate `Q` prefixes.
+- Low-confidence loose-topic matches are labeled as possible/needs-review in UI rather than normal
+  strong relevance.
 
-After `npm run build-pyqs`, public official link coverage is healthy again:
+### Topper names / public DTOs
 
-```json
-{
-  "officialQuestionCount": 958,
-  "linkedQuestionCount": 841,
-  "linkedCopyCount": 18234,
-  "sourceAvailableCount": 16513,
-  "bySubject": {
-    "gs3": 261,
-    "gs1": 272,
-    "gs2": 255,
-    "gs4": 50,
-    "essay": 3
-  },
-  "byType": {
-    "topic-match": 5709,
-    "loose-topic-match": 12270,
-    "strong": 221,
-    "direct": 34
-  }
-}
-```
+- Bumped `data/curation/topper-name-overrides.json` to schema version 2.
+- Added source-level, answer-level, and suppressed-source override arrays for future curation.
+- Updated `scripts/build-pyq-app-data.js` and `scripts/build-mappings.js` to consume source/answer
+  override hooks.
+- Normalized workspace public copy names server-side to a real public name or `Topper copy`.
+- Added `scripts/audit-topper-names.js`, which currently passes with no known bad public labels.
+- Regenerated `data/app/workspace-index.json` so public name fallbacks are normalized on disk.
 
-This resolves the prior broken generated output that had collapsed to ~183 linked questions and no GS4 coverage.
+### UI/page behavior/accessibility
+
+- `/api/search` now supports larger requested limits up to 1000 and returns limit/truncation metadata.
+- Browse and subject clients no longer flash stale default results on direct query URLs.
+- Invalid deep links show `Linked PYQ could not be found.` instead of silently falling back.
+- Optional pages disclose fallback provenance calmly while authoritative optional migration is ongoing.
+- Account/auth copy now distinguishes QA-disabled, auth-configured, production-misconfigured, and
+  local-unconfigured states.
+- Browse copy no longer hardcodes `temporarily open for QA` when auth is enabled.
+- PDF mobile fit and loading/error accessibility were improved.
+- Added search labels, aria-expanded/aria-controls, aria-live/status/alert states, and deep-link focus
+  targets.
+
+### Build determinism / OCR worker
+
+- Removed `next/font/google` imports from `src/app/layout.tsx` and kept CSS font-family stacks in
+  `src/app/globals.css` so production builds do not depend on build-time Google Fonts network access.
+- `scripts/full_openai_ocr.py` now avoids reclaiming already-done same-fingerprint pages and supports
+  `--only-pdf-file` for targeted shard lists.
+- OCR completion is not claimed; OCR artifacts/logs remain private and must not be committed.
 
 ## Verification completed
 
-All verification below passed after the source/data fixes:
+Earlier in this implementation pass, these full checks passed:
 
 ```bash
-node --test --import tsx src/lib/__tests__/*.test.ts
-# 29/29 passed
-
-npx tsc --noEmit --pretty false --incremental false
-# passed
-
 npm run lint -- --no-fix
-# passed
-
+npm run typecheck
+npm run test
+node scripts/check-official-pyq-link-health.js
+node scripts/audit-topper-names.js
 node scripts/check-no-public-pdf-url-leaks.js
-# passed
-
 npm run build
-# passed; 27 static pages; dynamic API/PDF routes; post-build leak check passed
+node scripts/check-no-public-pdf-url-leaks.js --include-build
+python3 -m py_compile scripts/full_openai_ocr.py
+node --check scripts/check-official-pyq-link-health.js
+node --check scripts/audit-topper-names.js
 ```
 
-Standalone/runtime packaging was checked after build:
-
-```text
-.next/standalone/data/pdf-runtime/answer-sources.json
-.next/standalone/data/pdf-runtime/pdf-r2-map.json
-```
-
-Runtime source/target hashes now match after build sync:
-
-```text
-data/app/answer-sources.json        == data/pdf-runtime/answer-sources.json
-data/app/pdf-r2-map.json            == data/pdf-runtime/pdf-r2-map.json
-```
-
-## Current blockers / next steps
-
-### OCR blocker
-
-Paid OCR cannot continue until the user/operator provides a valid OpenAI-compatible OCR config:
+Final pre-commit checks re-run after staging preparation:
 
 ```bash
-export OPENAI_BASE_URL="https://<valid-openai-compatible-base>"
-export OCR_OPENAI_MODEL="<vision-capable-model-from-that-provider>"
+git diff --check
+node scripts/check-official-pyq-link-health.js
+node scripts/audit-topper-names.js
+node scripts/check-no-public-pdf-url-leaks.js
 ```
 
-If direct OpenAI is intended, the key must be valid for `https://api.openai.com`, and runs must include `--allow-direct-openai`.
+All passed.
 
-Resume sequence after credentials are fixed:
+Additional safety checks:
+
+- Staged private/generated/media guard passed: no `.pdf`, `.mov`, `.apkg`, root thumbs, `.env`,
+  `local-pdfs/`, `extracted_data/`, `vault_merged_docs/`, `public/data/`, `.next/`, `node_modules/`,
+  `.venv/`, `.reasonix/`, or `.vscode/` paths are staged.
+- Targeted exact OpenAI-style long-hex `sk-*` token scan found no API key in intended staged files.
+
+## Decisions recorded
+
+See `docs/ai-decisions.md` for decisions added this pass:
+
+- Essay link health floor remains 3 until more authoritative Essay mappings exist.
+- Public topper-name fallbacks are normalized on disk and audited via `scripts/audit-topper-names.js`.
+- PDF byte-range proxying rejects open-ended forward ranges.
+- Production builds use offline/deterministic CSS font stacks rather than build-time Google Fonts.
+
+## Caveats / blockers
+
+- No paid OCR completion is claimed. The previous 32-shard OCR launch was stopped because it made the
+  Mac lag. Resume only if explicitly requested, using a much smaller shape such as 2 shards x 2 workers
+  or 4 shards x 2 workers.
+- Optional authoritative source migration is not complete; fallback rows are cleaned and disclosed in
+  UI, with parser/source migration left as future data work.
+- Public Administration still has 0 named rows in the current audit until real source/answer overrides
+  are curated. The public DTO rule still passes because bad labels are suppressed to `Topper copy`.
+- Manual browser smoke testing was not repeated after the final staging step in this checkpoint; rely
+  on the passed build/tests plus future manual smoke before deploy if desired.
+
+## Exact next step
+
+Commit the staged changes if `git status --short --branch`, staged guard, and final checks still look
+clean. Suggested commit message:
 
 ```bash
-cd /Users/ankitkumar/Downloads/open-topper
-source /tmp/open_topper_ocr_run.env  # if still present; otherwise set OCR_INPUT_ROOT/OCR_RUN_ROOT manually
-
-.venv/bin/python scripts/full_openai_ocr.py \
-  --verify-key \
-  --allow-direct-openai \
-  --input-dir "$OCR_INPUT_ROOT" \
-  --output-dir "$OCR_RUN_ROOT" \
-  --tmp-dir "$OCR_RUN_ROOT/tmp" \
-  --model "$OCR_OPENAI_MODEL" \
-  --concurrency 1 \
-  --rpm-limit 6
-
-.venv/bin/python scripts/full_openai_ocr.py \
-  --pilot \
-  --pilot-limit 2 \
-  --input-dir "$OCR_INPUT_ROOT" \
-  --output-dir "$OCR_RUN_ROOT" \
-  --tmp-dir "$OCR_RUN_ROOT/tmp" \
-  --model "$OCR_OPENAI_MODEL" \
-  --concurrency 2 \
-  --rpm-limit 30
+git commit -m "harden security, PYQ data quality, topper names, and study UI"
 ```
 
-Start `--full` only after `pilot-summary.json` has `gates.pass: true`.
-
-### Git blocker
-
-Do not use `git add .`. Stage only the explicit safe source/data/doc/test files. Exclude:
-
-- root PDFs/JPGs/MOV/APKG
-- `.env.local`
-- `.next/`
-- `node_modules/`
-- `local-pdfs/`
-- `extracted_data/`
-- `.kiro/`, `.reasonix/`, `.vscode/`, `.mcp.json`
-- unrelated files such as `transit_station_collector.py` and the long ad-hoc Markdown note
-
-## Files intentionally changed for the commit
-
-Expected commit scope includes:
-
-- security/PDF/auth/public-boundary source and tests
-- official PYQ builder/runtime/optional page changes
-- topper-name normalization code + curation JSON + tests
-- rebuilt tracked public/private app data required by the changed builders
-- synced `data/pdf-runtime/answer-sources.json`
-- OCR worker/default hardening and OCR task brief
-- docs updated with the actual verified status
+After commit, leave the unrelated untracked files unstaged unless the user explicitly asks to review
+them.

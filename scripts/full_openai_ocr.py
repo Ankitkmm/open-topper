@@ -477,6 +477,9 @@ class Manifest:
                     "SELECT status, updated_at FROM pages WHERE pdf_id=? AND page_number=? AND fingerprint=?",
                     (pdf.pdf_id, page_number, config.prompt_fingerprint),
                 ).fetchone()
+                if row and row["status"] == "done":
+                    self.conn.commit()
+                    return False
                 if row and row["status"] == "in_progress" and safe_str(row["updated_at"]) >= threshold:
                     self.conn.commit()
                     return False
@@ -759,6 +762,16 @@ class SourceMetadataIndex:
 def main(argv: list[str] | None = None) -> int:
     load_env_file(ENV_FILE)
     args = parse_args(argv)
+    if getattr(args, "only_pdf_file", None):
+        for list_file in args.only_pdf_file:
+            try:
+                for line in Path(list_file).expanduser().read_text(encoding="utf-8").splitlines():
+                    token = line.strip()
+                    if token and not token.startswith("#"):
+                        args.only_pdf.append(token)
+            except Exception as exc:
+                print(f"ERROR: could not read --only-pdf-file {list_file}: {redact_sensitive(exc)}", file=sys.stderr)
+                return 2
     if args.shard:
         try:
             shard_index, shard_total = parse_shard(args.shard)
@@ -978,6 +991,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--allow-unsafe-output-dir", action="store_true", default=env_bool("OCR_ALLOW_UNSAFE_OUTPUT_DIR", False), help="Deprecated/no-op safety flag; output is still restricted to extracted_data/ocr_openai.")
     parser.add_argument("--input-dir", action="append", default=[], help="Explicit private PDF input root; may be repeated. Must resolve under Acer local-pdfs mirror, repo local-pdfs, or explicit opted-in Acer downloaded-pdfs. Active defaults are local-pdfs only: Acer mirror, then repo local corpus.")
     parser.add_argument("--only-pdf", action="append", default=[], help="Restrict to a PDF path or drive ID; may be repeated")
+    parser.add_argument("--only-pdf-file", action="append", default=[], help="Read newline-delimited --only-pdf tokens/paths from a private file; may be repeated")
     parser.add_argument("--limit-pdfs", type=int, default=None, help="Limit selected PDFs after priority/shard filtering")
     parser.add_argument("--shard", default="", help="Shard selector i/N, applied after priority ordering")
     parser.add_argument("--output-dir", default=os.environ.get("OCR_OUTPUT_DIR", str(DEFAULT_OUTPUT_DIR)), help="Private output directory")

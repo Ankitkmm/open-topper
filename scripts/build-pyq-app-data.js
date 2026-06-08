@@ -23,6 +23,7 @@ const BAD_NAME_TOKENS = new Set([
   "public", "administration", "scorer", "pratham", "famous", "more", "web", "verifiedpdfurl",
   "modern", "ancient", "medieval", "world", "india", "and", "course", "programme", "program",
   "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+  "abhyaas", "abhyas", "compressed", "sure", "shot",
 ]);
 
 const CURATED_TOPPER_RANKS = [
@@ -35,6 +36,9 @@ const CURATED_TOPPER_RANKS = [
 const TOPPER_NAME_OVERRIDES = readJson(TOPPER_NAME_OVERRIDES_FILE, {
   suppressedNames: [],
   canonicalNames: [],
+  sourceNameOverrides: [],
+  answerNameOverrides: [],
+  suppressedSources: [],
 });
 const SUPPRESSED_NAME_KEYS = new Set((TOPPER_NAME_OVERRIDES.suppressedNames || []).map(normalizeOverrideKey));
 
@@ -112,6 +116,48 @@ function curatedTopperIdentity(...values) {
         source: "curation",
         status: "curated",
       };
+    }
+  }
+
+  return null;
+}
+
+function curatedIdentityFromOverride(entry, source) {
+  if (!entry || !entry.name) return null;
+  return {
+    value: entry.name,
+    rank: cleanRank(entry.rank),
+    year: cleanYear(entry.year),
+    source,
+    status: "curated",
+  };
+}
+
+function answerNameOverride(answerId) {
+  if (!answerId) return null;
+  const match = (TOPPER_NAME_OVERRIDES.answerNameOverrides || []).find((entry) => entry.answerId === answerId);
+  return curatedIdentityFromOverride(match, "answer_override");
+}
+
+function sourceNameOverride(answer, sourceUrl = "", subject = "") {
+  const driveId = driveIdFromUrl(answer.sourceCdnUrl || sourceUrl || "");
+  const rawFilenames = [
+    answer.rawFilename,
+    answer.fileName,
+    answer.filename,
+  ].map((value) => String(value || "").trim()).filter(Boolean);
+  const normalizedFilenames = new Set(rawFilenames.map(normalizeOverrideKey));
+  const documentKey = sourceDocumentKey(answer, sourceUrl);
+  const subjectKey = normalizeOverrideKey(subject);
+
+  for (const entry of TOPPER_NAME_OVERRIDES.sourceNameOverrides || []) {
+    if (entry.subject && subjectKey && normalizeOverrideKey(entry.subject) !== subjectKey) continue;
+    if (entry.driveId && driveId && entry.driveId === driveId) return curatedIdentityFromOverride(entry, "source_override");
+    if (entry.sourceDocumentKey && documentKey && normalizeOverrideKey(entry.sourceDocumentKey) === normalizeOverrideKey(documentKey)) {
+      return curatedIdentityFromOverride(entry, "source_override");
+    }
+    if (entry.filename && normalizedFilenames.has(normalizeOverrideKey(entry.filename))) {
+      return curatedIdentityFromOverride(entry, "source_override");
     }
   }
 
@@ -594,7 +640,13 @@ function buildSourceIdentityLookup(index, r2Map) {
   return lookup;
 }
 
-function resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup) {
+function resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup, context = {}) {
+  const answerOverride = answerNameOverride(context.answerId);
+  if (answerOverride) return answerOverride;
+
+  const sourceOverride = sourceNameOverride(answer, sourceUrl, context.subject || "");
+  if (sourceOverride) return sourceOverride;
+
   const direct = resolveTopperName(answer);
   if (direct.value) return direct;
 
@@ -816,7 +868,10 @@ function build() {
         const source = resolveSourceUrl(answer, r2Map);
         const sourceUrl = source.url;
         const page = inferAnswerPage(detail, pageMeta(answer.exactPageNumber, sourceUrl));
-        const topperNameInfo = resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup);
+        const topperNameInfo = resolvePublishedTopperName(answer, sourceUrl, sourceIdentityLookup, {
+          answerId,
+          subject: detail.questionCategory || detail.paper || "",
+        });
         const cleanTopperName = topperNameInfo.value;
         const publicTopperName = displayTopperName(cleanTopperName);
         const answerNameStatus = topperNameInfo.status;

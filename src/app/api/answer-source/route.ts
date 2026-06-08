@@ -15,10 +15,10 @@ export async function POST(req: NextRequest) {
   const body = bodyResult.value;
 
   const answerId = typeof body.answerId === "string" ? body.answerId : "";
-  const sessionError = await requireSessionResponseIfConfigured();
-  if (sessionError) return sessionError;
   const accessError = await enforcePdfAccess(req, answerId);
   if (accessError) return accessError;
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
 
   const payload = buildPdfEmbedResponse(answerId);
   if (!payload.ok) {

@@ -8,9 +8,19 @@ interface Props {
   questions: SubjectPyqCard[];
   totalFiltered: number;
   searchParams: { q: string; category: string };
+  isLoadingResults?: boolean;
+  resultNotice?: string | null;
+  queryError?: string | null;
 }
 
-export function OfficialQuestionCards({ questions, totalFiltered, searchParams }: Props) {
+export function OfficialQuestionCards({
+  questions,
+  totalFiltered,
+  searchParams,
+  isLoadingResults = false,
+  resultNotice = null,
+  queryError = null,
+}: Props) {
   const activeQuery = searchParams.q.trim();
   const topSubjects = subjectSummary(questions);
 
@@ -24,13 +34,14 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
           Find a PYQ first, then open relevant topper answers.
         </h1>
         <p className="workspace-disclaimer mt-4 max-w-3xl text-sm leading-7 text-secondary">
-          PYQ discovery stays public. Topper copies, summaries, and PDFs are temporarily open for QA.
+          PYQ discovery stays public. Sign in when account sync is enabled to save progress across devices.
         </p>
 
         <form action="/browse" className="mt-7 flex flex-col gap-2 sm:flex-row">
           <div className="relative flex-1">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
             <input
+              aria-label="Search official PYQs"
               name="q"
               defaultValue={searchParams.q}
               placeholder="Search by meaning, topic, or syllabus words"
@@ -38,6 +49,7 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
             />
           </div>
           <input
+            aria-label="Filter by subject"
             name="category"
             defaultValue={searchParams.category}
             placeholder="Subject (GS II, Essay...)"
@@ -48,7 +60,7 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
           </button>
         </form>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted" aria-live="polite">
           <span>
             <span className="mono-stat text-secondary">{totalFiltered.toLocaleString()}</span>{" "}
             {activeQuery ? <>PYQs for “{activeQuery}”</> : "official PYQs"}
@@ -60,6 +72,24 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
             </Link>
           ))}
         </div>
+
+        {isLoadingResults && (
+          <div className="soft-panel-muted mt-7 p-5 text-sm text-secondary" role="status" aria-live="polite">
+            Searching official PYQs…
+          </div>
+        )}
+
+        {resultNotice && !isLoadingResults && (
+          <div className="soft-panel-muted mt-7 p-4 text-sm text-secondary" role="status" aria-live="polite">
+            {resultNotice}
+          </div>
+        )}
+
+        {queryError && !isLoadingResults && (
+          <div className="soft-panel-muted mt-7 p-4 text-sm text-secondary" role="alert">
+            {queryError}
+          </div>
+        )}
 
         <div className="mt-7 grid gap-3">
           {questions.map((question) => (
@@ -84,7 +114,7 @@ export function OfficialQuestionCards({ questions, totalFiltered, searchParams }
           ))}
         </div>
 
-        {questions.length === 0 && (
+        {!isLoadingResults && questions.length === 0 && (
           <div className="soft-panel-muted mt-7 px-6 py-20 text-center">
             <BookOpen size={34} className="mx-auto mb-4 text-muted" aria-hidden="true" />
             <p className="text-secondary">No official PYQs matched this search. Try a broader topic word.</p>

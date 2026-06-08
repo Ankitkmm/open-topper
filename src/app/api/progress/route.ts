@@ -17,13 +17,6 @@ type ProgressEntryRow = {
 };
 
 export async function GET(req: NextRequest) {
-  const sessionError = await requireSessionResponseIfConfigured();
-  if (sessionError) return sessionError;
-
-  if (!isEmailPasswordAuthConfigured()) {
-    return Response.json({ entries: [], configured: false }, { headers: PRIVATE_JSON_HEADERS });
-  }
-
   const limit = await checkRateLimit(req, {
     scope: "progress-read",
     max: getProgressRateLimitMax(),
@@ -39,6 +32,13 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  const sessionError = await requireSessionResponseIfConfigured();
+  if (sessionError) return sessionError;
+
+  if (!isEmailPasswordAuthConfigured()) {
+    return Response.json({ entries: [], configured: false }, { headers: PRIVATE_JSON_HEADERS });
+  }
+
   const supabase = await createClient(await cookies());
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user?.id) {
@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("user_progress")
     .select("item_type, item_id, done, updated_at")
+    .eq("user_id", authData.user.id)
     .order("updated_at", { ascending: false }) as unknown as { data: ProgressEntryRow[] | null; error: { message: string } | null };
 
   if (error) {
@@ -70,10 +71,6 @@ export async function PUT(req: NextRequest) {
   const requestError = requireJsonMutationRequest(req, 64_000);
   if (requestError) return requestError;
 
-  if (!isEmailPasswordAuthConfigured()) {
-    return Response.json({ configured: false }, { status: 503, headers: PRIVATE_JSON_HEADERS });
-  }
-
   const limit = await checkRateLimit(req, {
     scope: "progress-write",
     max: getProgressRateLimitMax(),
@@ -89,6 +86,10 @@ export async function PUT(req: NextRequest) {
     });
   }
 
+  if (!isEmailPasswordAuthConfigured()) {
+    return Response.json({ configured: false }, { status: 503, headers: PRIVATE_JSON_HEADERS });
+  }
+
   const supabase = await createClient(await cookies());
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user?.id) {
@@ -98,8 +99,12 @@ export async function PUT(req: NextRequest) {
   const bodyResult = await readBoundedJson<{ entries?: Array<{ itemType?: string; itemId?: string; done?: boolean }> }>(req, 64_000);
   if (!bodyResult.ok) return bodyResult.response;
   const body = bodyResult.value;
+  if (body.entries !== undefined && !Array.isArray(body.entries)) {
+    return Response.json({ error: "Progress entries must be an array." }, { status: 400, headers: PRIVATE_JSON_HEADERS });
+  }
 
   const entries = (body.entries || [])
+    .filter((entry): entry is { itemType?: string; itemId?: string; done?: boolean } => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
     .map((entry) => ({
       itemType: String(entry.itemType || "") as ProgressItemType,
       itemId: String(entry.itemId || "").trim(),

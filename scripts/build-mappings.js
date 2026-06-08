@@ -22,6 +22,9 @@ const TOPPER_NAME_OVERRIDES_FILE = path.join(ROOT, "data", "curation", "topper-n
 const TOPPER_NAME_OVERRIDES = readJson(TOPPER_NAME_OVERRIDES_FILE, {
   suppressedNames: [],
   canonicalNames: [],
+  sourceNameOverrides: [],
+  answerNameOverrides: [],
+  suppressedSources: [],
 });
 const SUPPRESSED_NAME_KEYS = new Set((TOPPER_NAME_OVERRIDES.suppressedNames || []).map(normalizeNameKey));
 
@@ -86,6 +89,23 @@ function curatedTopperName(value) {
     const matchCompact = compactNameKey(entry.match);
     if (!matchKey) continue;
     if (key.includes(matchKey) || compact.includes(matchCompact)) return entry.name;
+  }
+
+  return null;
+}
+
+function sourceOverrideName(topper) {
+  const filename = normalizeNameKey(topper?.filename || "");
+  const link = String(topper?.links || "");
+  const driveId = link.match(/drive\.google\.com\/file\/d\/([^/?#]+)/)?.[1]
+    || link.match(/\/drive_([^/?#]+?)\.pdf(?:[?#]|$)/)?.[1]
+    || String(topper?.filename || "").match(/^drive_([^/]+?)\.pdf$/i)?.[1]
+    || "";
+
+  for (const entry of TOPPER_NAME_OVERRIDES.sourceNameOverrides || []) {
+    if (entry.driveId && driveId && entry.driveId === driveId) return entry.name;
+    if (entry.filename && filename && normalizeNameKey(entry.filename) === filename) return entry.name;
+    if (entry.sourceDocumentKey && filename && normalizeNameKey(entry.sourceDocumentKey) === filename) return entry.name;
   }
 
   return null;
@@ -276,7 +296,7 @@ function main() {
       }
       seen.add(dedupeKey);
 
-      const name = extractTopperName(topper.filename);
+      const name = sourceOverrideName(topper) || extractTopperName(topper.filename);
       if (!name) {
         skippedNoName++;
         // Still include but with fallback

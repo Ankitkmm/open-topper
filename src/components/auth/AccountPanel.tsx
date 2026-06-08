@@ -112,7 +112,7 @@ function AccountPanelContent({
   async function handleSignOut() {
     setBusy("logout");
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", { method: "POST", body: "" });
       window.location.assign("/");
     } finally {
       setBusy(null);

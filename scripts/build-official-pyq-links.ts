@@ -1,6 +1,14 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
+import {
+  ESSAY_PROMPT_MARKER,
+  cleanEssayPromptSegment,
+  essayPromptTokensForMatch,
+  isEssayInstructionSegment,
+  normalizeEssayPromptForMatch,
+} from "../src/lib/essay-normalization";
 import { loadOfficialRows } from "../src/lib/official-pyqs";
+import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "../src/lib/public-records";
 import { getSubjectKeyFromValue } from "../src/lib/subject-definitions";
 
 const ROOT = join(__dirname, "..");
@@ -81,8 +89,6 @@ const CARD_SUBJECT_CACHE = new Map<string, string | null>();
 const ESSAY_TOKEN_CACHE = new Map<string, string[]>();
 const ESSAY_THEME_TOKEN_CACHE = new Map<string, string[]>();
 const ESSAY_CORE_TOKEN_CACHE = new Map<string, string[]>();
-
-const ESSAY_PROMPT_MARKER = /\bQ\.?\s*\d{1,2}[A-Za-z]?\b|(?<![A-Za-z0-9])\d{1,2}\s*[.)\]:-]/gi;
 
 type MatchType = AcceptedAnswerLink["matchType"];
 
@@ -491,7 +497,7 @@ function buildEssayPromptEntries(cards: PyqCard[]) {
     for (const prompt of extractEssayPrompts(card.question)) {
       const promptTokens = essayTokens(prompt);
       const coreTokens = essayCoreTokens(prompt);
-      const normalizedPrompt = normalizeQuestion(prompt);
+      const normalizedPrompt = normalizeEssayPromptForMatch(prompt);
       if (!normalizedPrompt || coreTokens.length === 0) continue;
 
       const signature = essayTokenSignature(coreTokens);
@@ -542,7 +548,7 @@ function matchEssayOfficialRow(
   signatureIndex: Map<string, EssayPromptEntry[]>,
   answersByCard: Map<string, TopperAnswerRecord[]>,
 ) {
-  const exactEntries = exactIndex.get(normalizeQuestion(row.question)) || [];
+  const exactEntries = exactIndex.get(normalizeEssayPromptForMatch(row.question)) || [];
   if (exactEntries.length > 0) {
     return {
       acceptedCards: collapseEssayEntryMatches(exactEntries).map((entry) => ({
@@ -939,6 +945,7 @@ function toPublicAnswerLink(record: AcceptedAnswerLink) {
 }
 
 function toPublicWebsiteAnswerLink(record: AcceptedAnswerLink) {
+  const publicTopperName = normalizePublicTopperName(record.topperName);
   return {
     officialQuestionId: record.officialQuestionId,
     topperAnswerId: record.topperAnswerId,
@@ -951,8 +958,8 @@ function toPublicWebsiteAnswerLink(record: AcceptedAnswerLink) {
     category: record.category,
     syllabusTags: record.syllabusTags,
     keywords: record.keywords,
-    topperName: isAnonymousTopper(record.topperName) ? "Anonymous topper" : record.topperName,
-    nameStatus: isAnonymousTopper(record.topperName) ? "anonymous" : record.nameStatus,
+    topperName: publicTopperName ?? PUBLIC_TOPPER_NAME_FALLBACK,
+    nameStatus: publicTopperName ? (record.nameStatus && record.nameStatus !== "anonymous" ? record.nameStatus : "filename") : "anonymous",
     rank: record.rank,
     year: record.year,
     institute: record.institute,
@@ -965,10 +972,6 @@ function toPublicWebsiteAnswerLink(record: AcceptedAnswerLink) {
     summaryStatus: record.summary ? "available" : "missing",
     valueAdds: record.valueAdds,
   };
-}
-
-function isAnonymousTopper(value: string) {
-  return !value || /^unknown topper$/i.test(value) || /^mapped topper$/i.test(value) || /^anonymous topper$/i.test(value);
 }
 
 function publicMatchReason(record: AcceptedAnswerLink) {
@@ -1158,9 +1161,7 @@ function essayTokens(value: string) {
   const cached = ESSAY_TOKEN_CACHE.get(key);
   if (cached) return cached;
 
-  const out = normalizeQuestion(key)
-    .replace(/\bcannot\b/g, "can not")
-    .split(" ")
+  const out = essayPromptTokensForMatch(key)
     .map(stem)
     .map(essayNormalizeToken)
     .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token) && !ESSAY_FALLBACK_NOISE.has(token));
@@ -1173,9 +1174,7 @@ function essayThemeTokens(value: string) {
   const cached = ESSAY_THEME_TOKEN_CACHE.get(key);
   if (cached) return cached;
 
-  const out = normalizeQuestion(key)
-    .replace(/\bcannot\b/g, "can not")
-    .split(" ")
+  const out = essayPromptTokensForMatch(key)
     .map(stem)
     .map(essayNormalizeToken)
     .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token));
@@ -1259,7 +1258,7 @@ function normalizeQuestion(value: string) {
 }
 
 function extractEssayPrompts(value: string) {
-  const clean = cleanEssayPromptText(value);
+  const clean = cleanEssayPromptSegment(value);
   const matches = [...clean.matchAll(ESSAY_PROMPT_MARKER)];
   const prompts: string[] = [];
 
@@ -1269,7 +1268,7 @@ function extractEssayPrompts(value: string) {
       let start = (match.index || 0) + match[0].length;
       while (start < clean.length && /[\s.):-]/.test(clean[start])) start += 1;
       const end = index + 1 < matches.length ? (matches[index + 1].index || clean.length) : clean.length;
-      const prompt = cleanEssayPromptText(clean.slice(start, end));
+      const prompt = cleanEssayPromptSegment(clean.slice(start, end));
       if (!prompt || isEssayInstructionSegment(prompt)) continue;
       prompts.push(prompt);
     }
@@ -1279,20 +1278,11 @@ function extractEssayPrompts(value: string) {
   return uniqueClean(prompts);
 }
 
-function cleanEssayPromptText(value: string) {
-  return String(value || "")
-    .replace(/\u00a0/g, " ")
-    .replace(/^section\s*[-:]\s*[a-z]\s*/i, "")
-    .replace(/^\d{1,2}\s+/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function uniqueClean(values: string[]) {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const value of values) {
-    const clean = cleanEssayPromptText(value);
+    const clean = cleanEssayPromptSegment(value);
     if (!clean) continue;
     const key = clean.toLowerCase();
     if (seen.has(key)) continue;
@@ -1302,17 +1292,13 @@ function uniqueClean(values: string[]) {
   return out;
 }
 
-function isEssayInstructionSegment(value: string) {
-  return /^(to\s+q\b|to\s+\d\b|write\b|choose\b|choosing\b|essay\b|one essay\b|two essays\b)/i.test(value.trim());
-}
-
 function isEssayPromptLike(value: string, promptTokens = essayTokens(value)) {
-  const clean = cleanEssayPromptText(value);
+  const clean = cleanEssayPromptSegment(value);
   if (!clean) return false;
   if (clean.length > 180) return false;
   if (promptTokens.length === 0 || promptTokens.length > 20) return false;
   if (ESSAY_PROMPT_BLOCKLIST.some((pattern) => pattern.test(clean))) return false;
-  return normalizeQuestion(clean).length >= 8;
+  return normalizeEssayPromptForMatch(clean).length >= 8;
 }
 
 function essayTokenSignature(tokensToJoin: string[]) {

@@ -128,9 +128,9 @@ html[data-theme="night"] {
 @theme inline {
   --color-background: var(--bg-deep);
   --color-foreground: var(--fg-primary);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: var(--font-newsreader), ui-serif, Georgia, "Times New Roman", serif;
-  --font-mono: var(--font-plex), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: Newsreader, ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * {

@@ -374,7 +374,8 @@ test("R2 PDF URL validation only allows HTTPS PDF objects on expected R2 hosts",
 
 test("PDF proxy byte range and response metadata validation rejects unsafe upstream behavior", () => {
   assert.equal(isValidPdfRangeHeader("bytes=0-99"), true);
-  assert.equal(isValidPdfRangeHeader("bytes=500-"), true);
+  assert.equal(isValidPdfRangeHeader("bytes=500-"), false);
+  assert.equal(isValidPdfRangeHeader("bytes=0-"), false);
   assert.equal(isValidPdfRangeHeader("bytes=-500"), true);
   assert.equal(isValidPdfRangeHeader("bytes=100-1"), false);
   assert.equal(isValidPdfRangeHeader("bytes=0-1,3-4"), false);
