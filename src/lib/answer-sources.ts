@@ -1,8 +1,7 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import type { NextRequest } from "next/server";
-import { getR2AllowedPublicHosts, getR2PublicUrl } from "./env";
-import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "./public-records";
+import { getR2AllowedPublicHosts, getR2PublicUrl, isProductionLikeRuntime } from "./env";
 
 export interface AnswerSourceRecord {
   url: string;
@@ -107,21 +106,8 @@ export function toProxiedPdfUrl(answerId: string, page: number) {
 }
 
 export function contentDispositionFilename(record: AnswerSourceRecord, answerId?: string) {
-  const publicName = normalizePublicTopperName(record.topperName)
-    || normalizePublicTopperName(record.filename)
-    || normalizePublicTopperName(record.sourceFilename)
-    || PUBLIC_TOPPER_NAME_FALLBACK;
-
-  const pieces = [
-    publicName,
-    record.rank ? `AIR ${record.rank}` : "",
-    record.year ? String(record.year) : "",
-    answerId || record.questionId,
-    record.page ? `p${record.page}` : "",
-  ].filter(Boolean);
-
-  const preferred = `${pieces.join(" ")}.pdf`;
-  const clean = preferred
+  const id = isValidAnswerId(answerId || "") ? answerId : "topper-copy";
+  const clean = `upscat-${id}.pdf`
     .replace(/[^\w .()-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -183,6 +169,7 @@ const DEFAULT_ALLOWED_R2_HOSTS = new Set([
 function isAllowedR2Hostname(hostname: string) {
   const host = hostname.toLowerCase();
   const configuredHosts = configuredR2PublicHostnames();
+  if (isProductionLikeRuntime()) return configuredHosts.has(host);
   return configuredHosts.has(host) || DEFAULT_ALLOWED_R2_HOSTS.has(host);
 }
 

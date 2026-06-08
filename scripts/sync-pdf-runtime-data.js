@@ -136,8 +136,61 @@ function ensureSafeRuntimeTarget(targetDir) {
 }
 
 function isAllowedRuntimePdfUrl(url) {
-  return /^https:\/\/[^\s/]+\.r2\.dev\//i.test(url)
-    || /^https:\/\/[^\s/]+\.r2\.cloudflarestorage\.com\//i.test(url);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== "https:") return false;
+  if (parsed.username || parsed.password) return false;
+  if (parsed.search || parsed.hash) return false;
+  if (!isAllowedRuntimeR2Host(parsed.hostname)) return false;
+  if (!isSafePdfPathname(parsed.pathname)) return false;
+  return true;
+}
+
+function isAllowedRuntimeR2Host(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  const configured = configuredR2PublicHostnames();
+  if (isProductionLikeRuntime()) return configured.has(host);
+
+  return configured.has(host)
+    || host === "pub-3476e7cc4efd44b58da659c67aad1348.r2.dev";
+}
+
+function configuredR2PublicHostnames() {
+  const hosts = new Set();
+  const publicUrl = (process.env.R2_PUBLIC_URL || "").trim();
+  if (publicUrl) {
+    try {
+      hosts.add(new URL(publicUrl).hostname.toLowerCase());
+    } catch {
+      // Invalid production config must fail closed by leaving the host out.
+    }
+  }
+
+  for (const host of (process.env.R2_ALLOWED_PUBLIC_HOSTS || "").split(",")) {
+    const clean = host.trim().toLowerCase();
+    if (clean) hosts.add(clean);
+  }
+
+  return hosts;
+}
+
+function isProductionLikeRuntime() {
+  return process.env.NODE_ENV === "production"
+    || process.env.VERCEL_ENV === "production"
+    || process.env.NEXT_PUBLIC_VERCEL_ENV === "production";
+}
+
+function isSafePdfPathname(pathname) {
+  const lower = String(pathname || "").toLowerCase();
+  if (!lower.endsWith(".pdf")) return false;
+  if (lower.includes("%00") || lower.includes("%2f") || lower.includes("%5c")) return false;
+  if (pathname.includes("\\")) return false;
+  return true;
 }
 
 function redactUrl(url) {
