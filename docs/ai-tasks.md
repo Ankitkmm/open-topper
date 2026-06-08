@@ -9,7 +9,7 @@
 - [ ] Add hosted Supabase env vars on the deployment target and apply `supabase/migrations/20260605_user_progress.sql` for production auth/progress.
 - [ ] (Codex/product) Add authoritative optional PYQ source files in `PYQS/optional/` and extend `parseOptionalOfficialRows()` in `src/lib/official-pyqs.ts` to read from them, replacing the current `workspace-optional-fallback` approach.
 - [ ] (Codex/data) Add curated `driveId/filename → topperName` map for remaining anonymous PDFs, especially Public Administration, Anthropology, and PSIR (starter map already in `data/curation/topper-name-overrides.json`).
-- [ ] (Codex/data) OCR: resume local-pdfs-only paid OCR after providing a valid `OPENAI_BASE_URL`, `OCR_OPENAI_MODEL`, and credential smoke-testable key. Keep input restricted to `/Volumes/Acer/open-topper/local-pdfs` or repo `local-pdfs`; keep heavy outputs under `/Volumes/Acer/open-topper/extracted_data/ocr_openai/`; do not use `downloaded-pdfs` unless a future request explicitly restores that workflow.
+- [ ] (Codex/data) OCR: resume local-pdfs-only paid OCR after providing a valid `OPENAI_BASE_URL` and credential smoke-testable key; set `OCR_OPENAI_MODEL` explicitly or let `--verify-key` auto-discover a likely vision model from `/v1/models`. Keep input restricted to `/Volumes/Acer/open-topper/local-pdfs` or repo `local-pdfs`; keep heavy outputs under `/Volumes/Acer/open-topper/extracted_data/ocr_openai/`; do not use `downloaded-pdfs` unless a future request explicitly restores that workflow.
 
 ## Backlog
 

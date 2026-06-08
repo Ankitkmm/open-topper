@@ -1,15 +1,13 @@
-# Task brief for Codex: Acer internet + local OCR pipeline
+# Task brief for Codex: local-pdfs-only OCR pipeline
 
-> Active source-of-truth brief for the current OCR/downloader/exporter request. This supersedes
-> the transient local-pdfs-only brief and older download-first notes. Read `AGENTS.md` and
-> `docs/ai-*.md` first. Parent/lead agent owns `docs/ai-handoff.md`; Worker B must not edit it.
+> Active source-of-truth brief for the current OCR request. This supersedes older download-first and
+> Acer internet-corpus notes. Read `AGENTS.md` and `docs/ai-*.md` first.
 
 ## Active scope
 
-Run the private OCR ingestion workflow over the **Acer internet + local corpus**:
+Run the private OCR ingestion workflow over the **local topper-copy corpus only**:
 
 ```text
-/Volumes/Acer/open-topper/extracted_data/ocr_openai/downloaded-pdfs/**/*.pdf
 /Volumes/Acer/open-topper/local-pdfs/**/*.pdf
 /Users/ankitkumar/Downloads/open-topper/local-pdfs/**/*.pdf
 ```
@@ -32,17 +30,17 @@ allowed only for tiny private tests. Production-scale OCR must use the Acer outp
 
 ## Allowed inputs
 
-The active OCR input roots are:
+The active OCR input roots are local-pdfs only:
 
-1. Acer downloaded PDFs from the bounded internet discovery/downloader:
-   `/Volumes/Acer/open-topper/extracted_data/ocr_openai/downloaded-pdfs/`
-2. Acer mirror of the existing local corpus:
+1. Acer mirror of the existing local corpus:
    `/Volumes/Acer/open-topper/local-pdfs/`
-3. Repo local corpus:
+2. Repo local corpus fallback:
    `/Users/ankitkumar/Downloads/open-topper/local-pdfs/`
 
-`OCR_INPUT_DIRS`/`--input-dir` may include any combination of those roots. The OCR worker must reject
-`public/`, app runtime data, random Downloads folders, and non-private roots.
+`OCR_INPUT_DIRS`/`--input-dir` may include those local-pdfs roots. Historical `downloaded-pdfs`
+input is disabled by default and requires explicit operator opt-in via `--input-dir` or
+`OCR_INPUT_DIRS`; do not use it for the active local-only run. The OCR worker must reject `public/`,
+app runtime data, random Downloads folders, and non-private roots.
 
 ## No accidental paid OCR
 
@@ -51,8 +49,8 @@ Paid/API-backed OCR may run **only** when all of the following are explicit:
 1. `OPENAI_API_KEY` is set.
 2. `OPENAI_BASE_URL` or `--base-url` is set. The script must not silently default API-backed runs to
    direct `https://api.openai.com`.
-3. `OCR_OPENAI_MODEL` or `--model` is set. The script must not auto-select a paid model from
-   `/v1/models`.
+3. `OCR_OPENAI_MODEL` or `--model` is set, or `--verify-key` successfully auto-discovers a likely
+   vision-capable model from `/v1/models` and persists it in `verify-summary.json`.
 4. If the base URL host is direct `api.openai.com`, `--allow-direct-openai` or
    `OCR_ALLOW_DIRECT_OPENAI=1` is also required.
 5. `--verify-key` has passed and written a persisted `verify-summary.json` matching the current base
@@ -78,32 +76,9 @@ The OCR worker is additive/offline only. Do not modify Next.js runtime, `/src/ap
 
 ## Downloader/discovery policy
 
-Internet discovery is intentionally gated. Use only bounded public-source crawling/downloads that
-respect source allow-lists, robots unless explicitly disabled, byte/page/depth limits, retry caps,
-and PDF validation. Do not solve captchas, bypass paywalls, create accounts, or use login-only
-resources.
-
-The downloader gate is:
-
-```bash
---allow-internet-discovery
-# or
-ALLOW_INTERNET_DISCOVERY_WORKFLOW=1
-```
-
-Outputs belong under `/Volumes/Acer/open-topper/extracted_data/ocr_openai/`, including:
-
-```text
-sources/discovered-sources.sqlite
-sources/discovered-sources.json
-sources/source-pages-manifest.json
-sources/discovered-events.jsonl
-download-manifest.json
-downloaded-pdfs/
-manifest.json
-```
-
-The downloader should scan both repo `local-pdfs/` and the Acer `local-pdfs/` mirror for dedupe.
+Internet discovery/download is out of scope for the active local-pdfs-only OCR run. Do not invoke
+`scripts/discover_topper_pdfs.py`, do not write new `downloaded-pdfs/` inputs, and do not mix public
+source discovery into this run unless a future user request explicitly restores that workflow.
 
 ## OCR output requirements
 
@@ -132,15 +107,13 @@ under `public/`, `data/app`, app runtime bundles, or any non-ignored committed l
 
 ## Execution order
 
-1. Optional bounded internet discovery/download only after the explicit internet gate is set.
-2. `--estimate` with no API calls over the active Acer internet + local inputs.
-3. `--verify-key` with explicit `OPENAI_BASE_URL` and `OCR_OPENAI_MODEL`; inspect
+1. `--estimate` with no API calls over the active local-pdfs-only inputs.
+2. `--verify-key` with explicit `OPENAI_BASE_URL` and optional `OCR_OPENAI_MODEL`; inspect
    `verify-summary.json`.
-4. Representative non-dry `--pilot`; inspect `pilot-summary.json`, page cache, and aggregate samples.
-5. `--full` only after matching verify-summary and passing pilot gates. Use shards if needed.
-6. `--rebuild-aggregates` as needed from page cache; no API calls.
-7. `scripts/export_ocr_records.py --production-gates acer-internet-local` to emit private JSONL/JSON/XML
-   records and fail on aggregate read errors.
+3. Representative non-dry `--pilot`; inspect `pilot-summary.json`, page cache, and aggregate samples.
+4. `--full` only after matching verify-summary and passing pilot gates. Use shards if needed.
+5. `--rebuild-aggregates` as needed from page cache; no API calls.
+6. `scripts/export_ocr_records.py` to emit private JSONL/JSON/XML records and fail on aggregate read errors after aggregates exist.
 
 ## Completion criteria
 

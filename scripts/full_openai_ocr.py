@@ -61,7 +61,6 @@ REPO_OCR_ROOT = ROOT / "extracted_data" / "ocr_openai"
 ACER_PROJECT_ROOT = Path("/Volumes/Acer/open-topper")
 ACER_LOCAL_PDFS_DIR = ACER_PROJECT_ROOT / "local-pdfs"
 ACER_OCR_ROOT = ACER_PROJECT_ROOT / "extracted_data" / "ocr_openai"
-ACER_DOWNLOADED_PDFS_DIR = ACER_OCR_ROOT / "downloaded-pdfs"
 ACER_TMP_ROOT = ACER_PROJECT_ROOT / "tmp"
 # The latest user instruction asks us to keep the heavy OCR working folder on
 # the Acer SSD when it is available. Code/docs still live in this repo.
@@ -79,7 +78,8 @@ AUTH_STATUSES = {401, 403}
 RETRY_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
 DIRECT_OPENAI_HOSTS = {"api.openai.com", "platform.openai.com"}
 SMOKE_NONCE_PREFIX = "OCR_SMOKE"
-INPUT_SCOPE = "acer-internet-and-local-v1"
+ACER_DOWNLOADED_PDFS_DIR = ACER_OCR_ROOT / "downloaded-pdfs"
+INPUT_SCOPE = "local-pdfs-only-v2"
 
 GENERIC_MODEL_EXCLUSIONS = ("embedding", "tts", "transcribe", "whisper", "realtime", "audio", "moderation", "image-", "dall")
 VISION_MODEL_HINTS = ("gpt-5", "gpt-4.1", "gpt-4o", "o4", "o3", "vision", "omni")
@@ -963,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Private, resumable OpenAI-compatible vision OCR for topper-copy PDFs", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("--verify-key", action="store_true", help="Verify OPENAI_API_KEY/base URL/model and run one vision smoke test")
+    parser.add_argument("--verify-key", action="store_true", help="Verify OPENAI_API_KEY/base URL/model and run one vision smoke test; auto-discovers a likely vision model when OCR_OPENAI_MODEL/--model is unset")
     parser.add_argument("--estimate", action="store_true", help="Inventory PDFs/cache and estimate remaining work without API calls")
     parser.add_argument("--pilot", action="store_true", help="OCR all pages of selected pilot PDFs")
     parser.add_argument("--full", action="store_true", help="OCR all selected PDFs/pages")
@@ -972,7 +972,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--rebuild-aggregates", action="store_true", help="Rebuild per-PDF Markdown/JSON from page cache without API calls")
     parser.add_argument("--allow-direct-openai", action="store_true", default=env_bool("OCR_ALLOW_DIRECT_OPENAI", False), help="Explicit opt-in for direct api.openai.com API-backed OCR. Without this, verify/pilot/full require OPENAI_BASE_URL/--base-url to point at a non-direct OpenAI-compatible endpoint.")
     parser.add_argument("--allow-unsafe-output-dir", action="store_true", default=env_bool("OCR_ALLOW_UNSAFE_OUTPUT_DIR", False), help="Deprecated/no-op safety flag; output is still restricted to extracted_data/ocr_openai.")
-    parser.add_argument("--input-dir", action="append", default=[], help="Explicit private PDF input root; may be repeated. Must resolve under Acer downloaded-pdfs, Acer local-pdfs mirror, or repo local-pdfs. Defaults to Acer downloaded-pdfs + Acer local-pdfs mirror + repo local-pdfs when present.")
+    parser.add_argument("--input-dir", action="append", default=[], help="Explicit private PDF input root; may be repeated. Must resolve under Acer local-pdfs mirror, repo local-pdfs, or explicit opted-in Acer downloaded-pdfs. Active defaults are local-pdfs only: Acer mirror, then repo local corpus.")
     parser.add_argument("--only-pdf", action="append", default=[], help="Restrict to a PDF path or drive ID; may be repeated")
     parser.add_argument("--limit-pdfs", type=int, default=None, help="Limit selected PDFs after priority/shard filtering")
     parser.add_argument("--shard", default="", help="Shard selector i/N, applied after priority ordering")
@@ -994,6 +994,46 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--min-free-gb", type=float, default=env_float("OCR_MIN_FREE_GB", 5.0), help="Minimum free disk on the private OCR output volume before API-backed OCR")
     parser.add_argument("--request-timeout", type=int, default=env_int("OCR_REQUEST_TIMEOUT", 180), help="HTTP timeout seconds")
     return parser.parse_args(argv)
+
+
+def model_from_matching_verify_summary(output_dir: Path, *, base_url_host: str, args: argparse.Namespace) -> str:
+    """Reuse the model from a previous passing verify-summary for pilot/full.
+
+    This lets the operator run --verify-key once with auto-discovery and then
+    continue with --pilot/--full without copying the discovered model into the
+    shell environment. The later persisted gate still validates the complete
+    fingerprint in require_matching_verify_summary().
+    """
+    path = output_dir / "verify-summary.json"
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    if not isinstance(summary, dict):
+        return ""
+    expected_render = {
+        "scale": float(getattr(args, "render_scale", 2.0)),
+        "image_format": IMAGE_FORMAT,
+        "jpeg_quality": int(getattr(args, "jpeg_quality", 82)),
+    }
+    if summary.get("schema_version") != "verify-summary.v1":
+        return ""
+    if summary.get("pass") is not True:
+        return ""
+    if safe_str(summary.get("input_scope")) != INPUT_SCOPE:
+        return ""
+    if safe_str(summary.get("base_url_host")) != safe_str(base_url_host):
+        return ""
+    if safe_str(summary.get("prompt_version")) != safe_str(getattr(args, "prompt_version", PROMPT_SCHEMA_VERSION)):
+        return ""
+    if int(summary.get("max_output_tokens") or -1) != int(getattr(args, "max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS)):
+        return ""
+    if summary.get("render") != expected_render:
+        return ""
+    smoke = summary.get("smoke_test") if isinstance(summary.get("smoke_test"), dict) else {}
+    if smoke.get("ok") is not True:
+        return ""
+    return safe_str(summary.get("model"))
 
 
 def build_config(args: argparse.Namespace) -> Config:
@@ -1040,10 +1080,13 @@ def build_config(args: argparse.Namespace) -> Config:
             )
         print("WARNING: API-backed OCR is using direct api.openai.com because --allow-direct-openai was supplied.", file=sys.stderr)
     model = safe_str(getattr(args, "model", None)) or os.environ.get("OCR_OPENAI_MODEL", "").strip()
-    if api_mode and not model:
+    if api_mode and not model and not getattr(args, "verify_key", False):
+        model = model_from_matching_verify_summary(output_dir, base_url_host=host_only, args=args)
+    if api_mode and not model and not getattr(args, "verify_key", False):
         raise ValueError(
-            "OCR_OPENAI_MODEL/--model is required for --verify-key, non-dry --pilot, and non-dry --full. "
-            "No paid model is auto-selected from /v1/models."
+            "OCR_OPENAI_MODEL/--model is required for non-dry --pilot and non-dry --full unless a matching "
+            "verify-summary.json in --output-dir supplies the model. Run --verify-key first to auto-discover "
+            "and persist a vision-capable model."
         )
 
     return Config(
@@ -1103,16 +1146,15 @@ def resolve_input_dirs(args: argparse.Namespace) -> list[Path]:
     raw_values: list[str] = []
     raw_values.extend(getattr(args, "input_dir", None) or [])
     # OCR_INPUT_DIRS is accepted for operator convenience. Every root is still
-    # validated as a private OCR input root: Acer downloaded PDFs, the Acer
-    # local-pdfs mirror, or the repo local-pdfs corpus. The active default is
-    # the Acer internet + local corpus, with all heavy artifacts on the Acer SSD
-    # when mounted.
+    # validated as a private OCR input root. The active default is local-pdfs
+    # only (Acer local mirror, then the repo local corpus). The historical
+    # Acer downloaded-pdfs workflow remains available only by explicit opt-in
+    # through --input-dir or OCR_INPUT_DIRS.
     env_dirs = os.environ.get("OCR_INPUT_DIRS", "").strip()
     if env_dirs:
         raw_values.extend(part.strip() for part in re.split(r"[,;]", env_dirs) if part.strip())
     if not raw_values:
         raw_values = [
-            str(ACER_DOWNLOADED_PDFS_DIR),
             str(ACER_LOCAL_PDFS_DIR),
             str(LOCAL_PDFS_DIR),
         ]
@@ -1134,7 +1176,7 @@ def resolve_input_dirs(args: argparse.Namespace) -> list[Path]:
 
 
 def ensure_private_input_path(resolved: Path) -> None:
-    """Allow only private Acer-downloaded PDFs or the local-pdfs corpus/mirror."""
+    """Allow only private opted-in downloaded PDFs or the local-pdfs corpus/mirror."""
     public = (ROOT / "public").resolve()
     if resolved == public or public in resolved.parents or "public" in resolved.parts:
         raise ValueError(f"Refusing input PDFs under public/: {resolved}")
@@ -1147,7 +1189,7 @@ def ensure_private_input_path(resolved: Path) -> None:
             return
     raise ValueError(
         "Refusing input outside the active private OCR corpus roots: "
-        f"{resolved}. Use {ACER_DOWNLOADED_PDFS_DIR}, {ACER_LOCAL_PDFS_DIR}, or {LOCAL_PDFS_DIR.resolve()}."
+        f"{resolved}. Use {ACER_LOCAL_PDFS_DIR}, {LOCAL_PDFS_DIR.resolve()}, or explicitly opt in to {ACER_DOWNLOADED_PDFS_DIR}."
     )
 
 
@@ -1723,8 +1765,6 @@ def run_estimate(run_id: str, all_inventory: list[PdfInfo], selected: list[PdfIn
 def verify_key_and_model(config: Config, inventory: list[PdfInfo], manifest: Manifest, run_id: str) -> dict[str, Any]:
     if not config.api_key:
         raise AuthError("OPENAI_API_KEY is missing. Put the key in .env.local or the environment before OCR.")
-    if not config.model:
-        raise ValueError("OCR_OPENAI_MODEL/--model is required; verification will not auto-select a paid OCR model.")
     models_url = f"{config.v1_base}/models"
     model_ids: list[str] = []
     model_list_error: str | None = None
@@ -1740,8 +1780,23 @@ def verify_key_and_model(config: Config, inventory: list[PdfInfo], manifest: Man
     if not model_ids:
         manifest.event("error", "models_empty", "Model list returned no model IDs; verification requires a non-empty /v1/models result", run_id=run_id)
         raise ValueError(f"/v1/models returned no model IDs for {config.base_url_host}; verification requires a non-empty model list before OCR.")
-    candidates = [config.model]
-    if model_ids and config.model not in model_ids:
+    if config.model:
+        candidates = [config.model]
+    else:
+        candidates = rank_model_candidates(model_ids)
+        if not candidates:
+            raise ValueError(
+                f"No likely vision-capable OCR model was found in /v1/models for {config.base_url_host}. "
+                "Set OCR_OPENAI_MODEL or pass --model explicitly."
+            )
+        manifest.event(
+            "info",
+            "verify_model_autodiscovery",
+            f"Trying {len(candidates)} auto-discovered model candidate(s)",
+            run_id=run_id,
+            metadata={"candidates": candidates[:20]},
+        )
+    if config.model and model_ids and config.model not in model_ids:
         raise ValueError(f"OCR_OPENAI_MODEL/--model {config.model!r} was not present in /v1/models for {config.base_url_host}.")
 
     nonce = f"{SMOKE_NONCE_PREFIX}_{sha256_json({'run_id': run_id, 'host': config.base_url_host, 'ts': iso_now()})[:10]}".upper()
@@ -2762,6 +2817,7 @@ def build_run_summary(run_id: str, mode: str, selected_pdfs: list[PdfInfo], all_
         "mode": mode,
         "generated_at": iso_now(),
         "target": [display_path(p) for p in config.input_dirs],
+        "input_scope": INPUT_SCOPE,
         "selected_pdfs": len(selected_pdfs),
         "selected_pages": selected_pages,
         "all_pdfs": total_discovered_pdfs,

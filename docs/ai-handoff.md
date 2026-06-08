@@ -51,7 +51,7 @@ output dir:          /Volumes/Acer/open-topper/extracted_data/ocr_openai/run_202
 API verification status:
 
 - First direct run refused because direct OpenAI requires explicit `--allow-direct-openai`.
-- Rerun with `--allow-direct-openai` refused because `OCR_OPENAI_MODEL` is not configured and the worker will not auto-select a paid model.
+- Rerun with `--allow-direct-openai` previously exposed a stale script guard; the worker now permits `--verify-key` to auto-discover a likely vision model when `OCR_OPENAI_MODEL` is unset. The current blocker is the direct OpenAI key returning 401 `invalid_api_key`.
 - A manual `/v1/models` request to `https://api.openai.com` using local `OPENAI_API_KEY` failed with HTTP 401 Unauthorized.
 - Therefore pilot/full OCR were correctly **not started**.
 
