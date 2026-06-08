@@ -309,6 +309,10 @@ class Manifest:
         with self.lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA synchronous=NORMAL")
+            # Bulk OCR can run many shard processes against the same manifest.
+            # SQLite still serializes writers; a longer busy timeout prevents a
+            # transient write burst from aborting an otherwise healthy shard.
+            self.conn.execute("PRAGMA busy_timeout=120000")
             self.conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -1304,7 +1308,7 @@ def build_inventory(enrichment: EnrichmentIndex, config: Config, manifest: Manif
         except Exception as exc:
             record_inventory_error(path, config, manifest, exc)
             print(f"WARN: recording unreadable PDF metadata {path}: {exc}", file=sys.stderr)
-        if i % 250 == 0:
+        if i % 50 == 0:
             print(f"  inventoried {i}/{len(unique_paths)} PDFs...", file=sys.stderr)
     return dedupe_inventory_by_content(inventory, config)
 
@@ -1542,7 +1546,14 @@ def build_pdf_info(path: Path, enrichment: EnrichmentIndex, config: Config) -> P
     page_count, text_word_count = inspect_pdf(path)
     drive_id = extract_drive_id(path.name)
     rel_path = source_rel_path(path)
-    sha = file_sha256(path)
+    # For the active local-pdfs-only corpus, drive_<id>.pdf filenames are stable
+    # project identities.  Hashing all 31.5 GiB on every shard startup created a
+    # 16x external-drive bottleneck before any paid OCR could start.  Keep SHA-256
+    # hashing for downloaded/non-drive inputs where content identity is otherwise
+    # ambiguous, but use drive/rel_path/size/page_count identity for local drive
+    # PDFs. Existing SHA-tagged page cache remains valid through cache validation
+    # fallback below.
+    sha = None if is_fast_local_drive_pdf(path, drive_id, rel_path) else file_sha256(path)
     source_meta = {}
     if config.source_metadata_index is not None and hasattr(config.source_metadata_index, "lookup"):
         with contextlib.suppress(Exception):
@@ -1637,15 +1648,30 @@ def file_sha256(path: Path, chunk_size: int = 1024 * 1024 * 4) -> str:
     return digest.hexdigest()
 
 
+def is_fast_local_drive_pdf(path: Path, drive_id: str | None, rel_path: str) -> bool:
+    if not drive_id:
+        return False
+    if not normalize_rel_path(rel_path).startswith("local-pdfs/"):
+        return False
+    try:
+        resolved = path.resolve()
+    except Exception:
+        resolved = path
+    for root in [ACER_LOCAL_PDFS_DIR, LOCAL_PDFS_DIR]:
+        with contextlib.suppress(Exception):
+            if resolved == root.resolve() or root.resolve() in resolved.parents:
+                return True
+    return False
+
+
 def inspect_pdf(path: Path) -> tuple[int, int]:
     fz = require_fitz()
     with fz.open(path) as doc:
         page_count = len(doc)
-        word_count = 0
-        for page_index in range(min(page_count, 5)):
-            with contextlib.suppress(Exception):
-                word_count += len((doc[page_index].get_text("text") or "").split())
-        return page_count, word_count
+        # Keep production shard startup cheap.  Text-layer density was only a
+        # pilot-selection hint; extracting text from the first pages of every PDF
+        # in every shard caused needless external-drive I/O before paid OCR.
+        return page_count, 0
 
 
 def apply_priority_order(inventory: list[PdfInfo]) -> list[PdfInfo]:
@@ -2403,10 +2429,10 @@ def cache_matches_source_and_settings_except_model(cache: dict[str, Any], pdf: P
         return False
     if safe_int(cache.get("page_count"), -1) != pdf.page_count:
         return False
-    if safe_str(cache.get("sha256")) != safe_str(pdf.sha256):
+    if pdf.sha256 and safe_str(cache.get("sha256")) != safe_str(pdf.sha256):
         return False
     source_pdf = cache.get("source_pdf") if isinstance(cache.get("source_pdf"), dict) else {}
-    if source_pdf and safe_str(source_pdf.get("sha256")) != safe_str(pdf.sha256):
+    if pdf.sha256 and source_pdf and safe_str(source_pdf.get("sha256")) != safe_str(pdf.sha256):
         return False
     if safe_str(cache.get("prompt_version")) != config.prompt_version:
         return False
@@ -2437,7 +2463,7 @@ def cache_is_valid(cache: dict[str, Any], pdf: PdfInfo, config: Config, expected
         return False
     if safe_str(cache.get("drive_id")) != safe_str(pdf.drive_id):
         return False
-    if not pdf.sha256 or safe_str(cache.get("sha256")) != safe_str(pdf.sha256):
+    if pdf.sha256 and safe_str(cache.get("sha256")) != safe_str(pdf.sha256):
         return False
     if safe_int(cache.get("page_count"), -1) != pdf.page_count:
         return False
@@ -2449,7 +2475,7 @@ def cache_is_valid(cache: dict[str, Any], pdf: PdfInfo, config: Config, expected
     cached_byte_size = source_pdf.get("byte_size") if source_pdf else cache.get("source_pdf_byte_size")
     cached_mtime_ns = source_pdf.get("mtime_ns") if source_pdf else cache.get("source_pdf_mtime_ns")
     cached_sha = source_pdf.get("sha256") if source_pdf else cache.get("sha256")
-    if safe_str(cached_sha) != safe_str(pdf.sha256):
+    if pdf.sha256 and safe_str(cached_sha) != safe_str(pdf.sha256):
         return False
     if safe_int(cached_byte_size, -1) != int(pdf.byte_size):
         return False
@@ -2457,7 +2483,7 @@ def cache_is_valid(cache: dict[str, Any], pdf: PdfInfo, config: Config, expected
     # repo and Acer mirror have different filesystem mtimes.  Content hash and
     # byte size are the authoritative source identity; mtime remains recorded as
     # provenance/debug metadata.
-    if safe_str(cached_sha) != safe_str(pdf.sha256) and safe_int(cached_mtime_ns, -1) != int(pdf.mtime_ns):
+    if pdf.sha256 and safe_str(cached_sha) != safe_str(pdf.sha256) and safe_int(cached_mtime_ns, -1) != int(pdf.mtime_ns):
         return False
 
     cache_model = safe_str(cache.get("model"))
