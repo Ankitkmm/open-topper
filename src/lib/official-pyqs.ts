@@ -1,5 +1,12 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import {
+  ESSAY_PROMPT_MARKER,
+  cleanEssayPromptSegment,
+  essayPromptTokensForMatch,
+  isEssayInstructionSegment,
+  normalizeEssayPromptForMatch,
+} from "./essay-normalization";
 import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "./public-records";
 import type { SubjectPyqCard } from "./search-results";
 import { bestTokenMatchScore, matchesSearchTerm, normalizeSearchText, searchTerms, searchTokens } from "./search-text";
@@ -52,7 +59,8 @@ export interface OfficialRow {
   syllabusTags: string[];
   keywords: string[];
   sourceQuestionId?: string;
-  sourceKind?: "upsc-official" | "workspace-optional-fallback";
+  sourceKind?: "upsc-official" | "optional-official" | "workspace-optional-fallback";
+  source?: string;
   workspaceQuestion?: OfficialWorkspaceQuestion;
 }
 
@@ -73,7 +81,14 @@ const OPTIONAL_OFFICIAL_SUBJECTS: SubjectKey[] = [
   "history",
 ];
 
-const ESSAY_PROMPT_MARKER = /\bQ\.?\s*\d{1,2}[A-Za-z]?\b|(?<![A-Za-z0-9])\d{1,2}\s*[.)\]:-]/gi;
+const OPTIONAL_OFFICIAL_SOURCE_FILES: Partial<Record<SubjectKey, string>> = {
+  anthropology: "anthropology.md",
+  geography: "geography.md",
+  history: "history.md",
+  psir: "psir.md",
+  "public-administration": "public-administration.md",
+  sociology: "sociology.md",
+};
 
 interface OfficialAnswerLink {
   officialQuestionId?: string;
@@ -189,41 +204,6 @@ const OPTIONAL_QUESTION_DIRECTIVES = new Set([
   "write",
 ]);
 
-const ESSAY_PROMPT_NOISE = new Set([
-  "a",
-  "an",
-  "and",
-  "as",
-  "at",
-  "be",
-  "been",
-  "being",
-  "by",
-  "choose",
-  "choosing",
-  "each",
-  "essay",
-  "from",
-  "has",
-  "have",
-  "in",
-  "is",
-  "it",
-  "of",
-  "one",
-  "or",
-  "section",
-  "the",
-  "to",
-  "topic",
-  "two",
-  "we",
-  "what",
-  "with",
-  "words",
-  "write",
-]);
-
 export function getOfficialSubjectPyqs(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
   return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map((entry) => toOfficialCard(entry.row));
 }
@@ -302,11 +282,15 @@ export function getOfficialPyqStats() {
 export function loadOfficialRows(): OfficialRow[] {
   if (cachedRows) return cachedRows;
 
+  const optionalRows = parseOptionalOfficialRows();
+  const subjectsWithCanonicalOptional = new Set(optionalRows.map((row) => row.subjectKey));
+
   cachedRows = [
     ...parseGs123(),
     ...parseGs4(),
     ...parseEssay(),
-    ...parseOptionalWorkspaceOfficialRows(),
+    ...optionalRows,
+    ...parseOptionalWorkspaceOfficialRows(subjectsWithCanonicalOptional),
   ];
 
   return cachedRows;
@@ -731,15 +715,83 @@ function parseEssay(): OfficialRow[] {
   return rows;
 }
 
-function parseOptionalWorkspaceOfficialRows(): OfficialRow[] {
+function parseOptionalOfficialRows(): OfficialRow[] {
+  const rows: OfficialRow[] = [];
+  const idCounts = new Map<string, number>();
+  const optionalDir = join(PYQ_DIR, "optional");
+
+  for (const subjectKey of OPTIONAL_OFFICIAL_SUBJECTS) {
+    const fileName = OPTIONAL_OFFICIAL_SOURCE_FILES[subjectKey];
+    if (!fileName) continue;
+    const file = join(optionalDir, fileName);
+    if (!existsSync(file)) continue;
+
+    const subject = getSubjectDefinition(subjectKey);
+    const lines = readFileSync(file, "utf-8").split(/\r?\n/);
+
+    for (const [lineIndex, line] of lines.entries()) {
+      if (!line.trim() || line.trimStart().startsWith("#")) continue;
+      const columns = line.split("\t");
+      if (columns.length < 5) continue;
+
+      const [
+        yearRaw,
+        paperRaw,
+        questionNoRaw,
+        topicRaw,
+        questionRaw,
+        tagsRaw = "",
+        marksRaw = "",
+        sourceRaw = "",
+      ] = columns;
+
+      const year = toYear(yearRaw);
+      const paperNumber = parseOptionalPaperNumber(paperRaw);
+      const questionNo = cleanText(questionNoRaw);
+      const question = cleanOptionalFallbackQuestionText(questionRaw);
+      if (!year || !paperNumber || !questionNo || !isOptionalOfficialQuestionText(question)) continue;
+
+      const baseId = `official_${subjectKey}_${year}_p${paperNumber}_${slug(questionNo) || `row_${lineIndex + 1}`}`;
+      const duplicateCount = idCounts.get(baseId) || 0;
+      idCounts.set(baseId, duplicateCount + 1);
+
+      const topic = cleanText(topicRaw);
+      const tags = uniqueClean([
+        topic,
+        ...cleanList(tagsRaw),
+        subject.label,
+      ]);
+      const marks = parseInt(marksRaw, 10);
+
+      rows.push({
+        id: duplicateCount ? `${baseId}_${duplicateCount + 1}` : baseId,
+        subjectKey,
+        question,
+        paper: `Paper ${paperNumber}`,
+        category: subject.label,
+        year,
+        marks: Number.isFinite(marks) ? marks : null,
+        syllabusTags: topic ? [topic] : [],
+        keywords: tags,
+        sourceKind: "optional-official",
+        source: cleanText(sourceRaw) || fileName,
+      });
+    }
+  }
+
+  return rows;
+}
+
+function parseOptionalWorkspaceOfficialRows(subjectsWithCanonicalOptional = new Set<SubjectKey>()): OfficialRow[] {
   const snapshot = loadWorkspaceSnapshot();
   const rows: OfficialRow[] = [];
   const seen = new Map<string, number>();
 
   for (const question of snapshot.questions || []) {
     if (!OPTIONAL_OFFICIAL_SUBJECTS.includes(question.subjectKey)) continue;
+    if (subjectsWithCanonicalOptional.has(question.subjectKey)) continue;
 
-    const questionText = cleanText(question.question);
+    const questionText = cleanOptionalFallbackQuestionText(question.question);
     if (!isOptionalOfficialQuestionText(questionText)) continue;
 
     const subject = getSubjectDefinition(question.subjectKey);
@@ -767,6 +819,24 @@ function parseOptionalWorkspaceOfficialRows(): OfficialRow[] {
   }
 
   return rows;
+}
+
+function parseOptionalPaperNumber(value: string) {
+  const match = String(value || "").match(/\b(?:paper|p)?\s*([12])\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function cleanOptionalFallbackQuestionText(value: string) {
+  return cleanText(value)
+    .replace(/^["'“”]+/, "")
+    .replace(/["'“”]+$/, "")
+    .replace(/^\s*Q\s*Que\b[\s:.)-]*/i, "")
+    .replace(/^\s*QQue\b[\s:.)-]*/i, "")
+    .replace(/^\s*Q\s+Q(?=\d|\s)/i, "Q")
+    .replace(/^\s*Q{2,}(?=\d|\s)/i, "Q")
+    .replace(/\s*\(\s*\)\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function loadWorkspaceSnapshot(): WorkspaceSnapshot {
@@ -1065,60 +1135,6 @@ function isNearExactEssayPrompt(officialNormalized: string, candidateNormalized:
   }
 
   return coverage >= 0.86 && jaccard >= 0.76 && lengthRatio >= 0.74;
-}
-
-function normalizeEssayPromptForMatch(value: string) {
-  return cleanEssayPromptSegment(value)
-    .toLowerCase()
-    .replace(/^\s*(?:section\s+[ab]\s+)?q(?:uestion)?\.?\s*\d+[a-z]?\)?\s*/i, "")
-    .replace(/^\s*\d+[a-z]?[.)\]:-]\s*/, "")
-    .replace(/\b(?:1000|1200|1500)\s*words?\b/gi, "")
-    .replace(/&/g, " and ")
-    .replace(/^["'“”]+|["'“”]+$/g, "")
-    .replace(/['"`]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function essayPromptTokensForMatch(normalizedPrompt: string) {
-  const seen = new Set<string>();
-  const out: string[] = [];
-
-  for (const token of normalizedPrompt.split(/\s+/)) {
-    if (!token || ESSAY_PROMPT_NOISE.has(token)) continue;
-    const normalized = normalizeEssayPromptToken(token);
-    if (normalized.length < 2 || ESSAY_PROMPT_NOISE.has(normalized) || seen.has(normalized)) continue;
-    seen.add(normalized);
-    out.push(normalized);
-  }
-
-  return out;
-}
-
-function normalizeEssayPromptToken(token: string) {
-  if (["civilisation", "civilization", "civilized", "civilised"].includes(token)) return "civil";
-  if (["culture", "cultural"].includes(token)) return "cultur";
-  if (["education", "educational"].includes(token)) return "educat";
-  if (["equality", "equal", "equity"].includes(token)) return "equal";
-  if (["science", "scientific"].includes(token)) return "science";
-  if (["society", "social"].includes(token)) return "societ";
-  if (token.length > 6 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
-  if (token.length > 7 && token.endsWith("ing")) return token.slice(0, -3);
-  if (token.length > 6 && token.endsWith("ed")) return token.slice(0, -2);
-  if (token.length > 5 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
-  return token;
-}
-
-function cleanEssayPromptSegment(value: string) {
-  return cleanText(value)
-    .replace(/^section\s*[-:]\s*[a-z]\s*/i, "")
-    .replace(/^\s*(?:write\s+)?(?:one|two)\s+essays?.*?:\s*/i, "")
-    .trim();
-}
-
-function isEssayInstructionSegment(value: string) {
-  return /^(?:to\s+q\b|to\s+\d\b|write\b|choose\b|choosing\b|essay\b|one essay\b|two essays\b)/i.test(value.trim());
 }
 
 function withQuestionMarks(question: string, marks: number | null) {
