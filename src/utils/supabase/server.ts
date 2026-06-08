@@ -1,15 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/env";
+import { getSupabasePublicConfigState } from "@/lib/public-env";
 import type { Database } from "@/utils/supabase/schema";
 
 export async function createClient(cookieStoreParam?: Awaited<ReturnType<typeof cookies>>) {
-  const url = getSupabaseUrl();
-  const key = getSupabasePublishableKey();
-  if (!url || !key) throw new Error("Supabase server auth is not configured.");
+  const config = getSupabasePublicConfigState();
+  if (!config.ok) throw new Error(`Supabase server auth is not configured: ${config.reason}.`);
   const cookieStore = cookieStoreParam ?? await cookies();
 
-  return createServerClient<Database>(url, key, {
+  return createServerClient<Database>(config.url, config.key, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

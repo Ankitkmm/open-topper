@@ -1,15 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import { getSupabasePublicPublishableKey, getSupabasePublicUrl } from "@/lib/public-env";
+import { getSupabasePublicConfigState } from "@/lib/public-env";
 import type { Database } from "@/utils/supabase/schema";
 
 const AUTH_COOKIE_PATTERN = /^sb-.*-auth-token(?:\.\d+)?$/;
 
 export async function updateSession(request: NextRequest) {
-  const url = getSupabasePublicUrl();
-  const key = getSupabasePublicPublishableKey();
+  const config = getSupabasePublicConfigState();
 
-  if (!url || !key || !hasSupabaseAuthCookie(request)) {
+  if (!config.ok || !hasSupabaseAuthCookie(request)) {
     return NextResponse.next({ request });
   }
 
@@ -19,7 +18,7 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const supabase = createServerClient<Database>(url, key, {
+  const supabase = createServerClient<Database>(config.url, config.key, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
