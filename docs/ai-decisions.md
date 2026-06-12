@@ -71,3 +71,5 @@
 - 2026-06-09: Public topper-name fallbacks are normalized on disk to "Topper copy" and bad source labels are blocked by `scripts/audit-topper-names.js`; source-level and answer-level override arrays are schema v2 placeholders for future curation.
 - 2026-06-09: PDF byte-range proxying rejects open-ended forward ranges (`bytes=N-`) so every accepted partial response is bounded to the 32 MiB span cap.
 - 2026-06-09: Production builds must be deterministic/offline for fonts; remove `next/font/google` build-time fetches and rely on CSS font-family stacks so CI/sandbox builds do not fail on Google Fonts network access.
+- 2026-06-12: Production npm audit must remain clean. Build-only `xlsx` belongs in `devDependencies`, and vulnerable transitive packages in the optional local-embeddings stack should be pinned with npm overrides when that preserves app behavior and removes the advisory from production installs.
+- 2026-06-13: The PDF open-token issuance route (`POST /api/answer-source`) is rate-limited separately from PDF byte-stream fetches so mobile/PDF open bursts can be tuned without weakening the stricter `/pdf/*` fetch protections.

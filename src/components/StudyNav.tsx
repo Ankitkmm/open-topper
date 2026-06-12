@@ -25,7 +25,7 @@ export function StudyNav() {
 
   return (
     <header className="study-nav">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
+      <div className="study-nav-inner mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-2.5 sm:flex-nowrap sm:gap-3 sm:px-6 lg:px-8">
         {showBack && (
           <button type="button" onClick={goBack} className="nav-back shrink-0" aria-label="Go back">
             <ArrowLeft size={17} aria-hidden="true" />
@@ -48,7 +48,7 @@ export function StudyNav() {
           </span>
         </Link>
 
-        <nav className="nav-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label="Papers">
+        <nav className="nav-scroll order-3 flex min-w-0 basis-full items-center gap-1 overflow-x-auto sm:order-none sm:flex-1 sm:basis-auto" aria-label="Papers">
           {PRIMARY.map((key) => {
             const subject = getSubjectDefinition(key);
             return (
@@ -64,15 +64,16 @@ export function StudyNav() {
           })}
         </nav>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0 sm:gap-2">
           <Link
             href="/browse"
             className="nav-pill"
             data-active={pathname.startsWith("/browse")}
             aria-label="Search all questions"
+            title="Search all questions"
           >
             <Search size={15} aria-hidden="true" />
-            <span className="hidden sm:inline">Search</span>
+            <span>Search</span>
           </Link>
           <ThemeSwitcher compact />
           <AuthControls compact />

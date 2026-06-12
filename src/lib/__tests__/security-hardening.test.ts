@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 
 import {
   getAuthSecret,
+  getAnswerSourceRateLimitMax,
   getPdfTokenSecret,
   getPdfTokenTtlSeconds,
   getPdfUpstreamTimeoutMs,
@@ -54,6 +55,7 @@ const ENV_KEYS = [
   "R2_ALLOWED_PUBLIC_HOSTS",
   "PDF_TOKEN_TTL_SECONDS",
   "PDF_UPSTREAM_TIMEOUT_MS",
+  "RATE_LIMIT_ANSWER_SOURCE_MAX",
 ] as const;
 
 function withEnv<T>(patch: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>, run: () => T) {
@@ -221,9 +223,11 @@ test("numeric env parsing rejects partial numbers and caps sensitive limits", ()
   withEnv({
     PDF_TOKEN_TTL_SECONDS: "999999",
     PDF_UPSTREAM_TIMEOUT_MS: "999999",
+    RATE_LIMIT_ANSWER_SOURCE_MAX: "7",
   }, () => {
     assert.equal(getPdfTokenTtlSeconds(), 300);
     assert.equal(getPdfUpstreamTimeoutMs(), 30_000);
+    assert.equal(getAnswerSourceRateLimitMax(), 7);
   });
 });
 

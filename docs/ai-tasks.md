@@ -16,7 +16,7 @@
 - [ ] Decide whether PDF delivery should stay viewer-proxied from the app or move to private signed R2 objects later.
 - [ ] Real database-backed progress sync (`/api/progress`, Supabase/Postgres/RLS or equivalent) after auth.
 - [ ] Move PDFs fully to private R2/S3 with short-lived signed URLs.
-- [ ] Add rate limiting to `/api/answer-source`.
+- [ ] Review/tune the existing `/api/answer-source` and PDF-viewer rate limits for production traffic patterns.
 - [ ] Personalization: daily frequency, heatmap, bookmarks, notes, streaks.
 - [ ] Topper upload/review flow.
 - [ ] Tests for filtering, pagination, PDF link extraction, topper-name normalization.

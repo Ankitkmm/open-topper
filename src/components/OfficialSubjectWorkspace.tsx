@@ -232,8 +232,8 @@ export function OfficialSubjectWorkspace({
           </div>
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="soft-panel flex flex-col p-4 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-6rem)]">
+        <div className="mt-8 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-6">
+          <aside className="soft-panel mobile-syllabus-panel flex max-h-[22rem] flex-col p-4 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-6rem)]">
             <div className="overline mb-3 shrink-0">Syllabus</div>
             <button
               type="button"
