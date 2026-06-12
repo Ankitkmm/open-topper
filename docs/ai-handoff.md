@@ -3,56 +3,61 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-13 18:40 IST · By: Codex
+Last updated: 2026-06-13 19:15 IST · By: Codex
 
-## PDF/mobile regression-fix handoff
+## Preview deploy-fix handoff
 
-I followed the user correction that the prior pass over-changed the PDF viewer. This pass restores the older viewer behavior and reapplies only the requested improvements: better mobile sizing, explicit one-page/two-page mode, same-tab mobile PDF open, and simple tap-to-open filters on mobile subject pages.
+I fixed the preview deployment failure that was blocking Vercel builds after the mobile/PDF work.
+
+### Root cause
+
+`npm run build` runs `scripts/sync-pdf-runtime-data.js` first. That script was treating **preview** builds as production-like because `NODE_ENV=production` is set during Vercel builds, so the default R2 preview host (`pub-3476e7cc4efd44b58da659c67aad1348.r2.dev`) was rejected unless explicitly allowlisted via deploy env.
+
+In practice, this caused preview deploys to fail with:
+
+- `data/app/answer-sources.json.<answerId>.url must be an R2 URL`
 
 ### What I changed
 
-- Restored `PdfViewerPage` behavior back toward the older stable model from `24fafd5`.
-- Kept the original viewer structure and navigation model, then added only:
-  - lower mobile-friendly zoom values (`0.6`, `0.7`)
-  - mobile default zoom `70%`
-  - slightly taller / tighter mobile viewer container
-  - a new **Pages** selector with `Auto`, `One page`, `Two page`
-- Preserved stable page-jump behavior while making page mode switch additive rather than a full redesign.
-- Kept desktop/new-tab PDF open, but changed mobile PDF open to **same-tab** in `OfficialSubjectWorkspace`.
-- Preserved the mobile filter disclosure in the subject page body, but simplified its labeling to **Filters** so it is clearer on small devices.
-- Reverted the over-aggressive mobile header/theme/account redesign and returned to the simpler header baseline.
-- Fixed one existing unrelated Next 16 route typing issue by making `resolveOfficialSyllabusFilter()` internal-only inside `src/app/api/search/route.ts`.
+- In `/Users/ankitkumar/Downloads/open-topper/scripts/sync-pdf-runtime-data.js`
+  - changed preview detection so `VERCEL_ENV=preview` / `NEXT_PUBLIC_VERCEL_ENV=preview` are **not** treated as strict production-like validation mode.
+- In `/Users/ankitkumar/Downloads/open-topper/src/lib/public-env.ts`
+  - matched the same preview-vs-production logic for runtime env classification.
+- In `/Users/ankitkumar/Downloads/open-topper/src/lib/__tests__/security-hardening.test.ts`
+  - added a regression test proving Vercel preview remains fail-open for the known default R2 preview host.
+
+This keeps **true production** fail-closed, while making **preview** builds succeed without requiring extra private env setup for the default preview host.
 
 ### Verification
 
-- `npm run lint -- --no-fix` → pass
-- `npm run typecheck` → pass
-- `npm test` → pass
+Passed locally:
 
-### Browser / manual verification notes
+- `NODE_ENV=production VERCEL_ENV=preview npm run build`
+- `npm run lint -- --no-fix`
+- `npm run test`
+- `npm run typecheck`
 
-- The in-app browser tab list now shows the real app again at `http://localhost:3000/browse` with title `Browse All Questions - UPSCat`.
-- I could inspect the live browse-page DOM successfully in the Browser plugin.
-- Deeper browser automation on `/gs1` and screenshot capture became flaky/time-limited in this session, so full visual confirmation of subject/PDF pages in the Browser plugin remains incomplete.
-- This looks like browser-runtime flakiness rather than the earlier hard localhost refusal state.
+Build output confirmed:
+- runtime PDF sync passed
+- public/client leak checks passed
+- Next production build completed successfully
 
 ### Files changed by Codex in this pass
 
-- `/Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx`
-- `/Users/ankitkumar/Downloads/open-topper/src/components/OfficialSubjectWorkspace.tsx`
-- `/Users/ankitkumar/Downloads/open-topper/src/components/StudyNav.tsx`
-- `/Users/ankitkumar/Downloads/open-topper/src/app/api/search/route.ts`
+- `/Users/ankitkumar/Downloads/open-topper/scripts/sync-pdf-runtime-data.js`
+- `/Users/ankitkumar/Downloads/open-topper/src/lib/public-env.ts`
+- `/Users/ankitkumar/Downloads/open-topper/src/lib/__tests__/security-hardening.test.ts`
 - `/Users/ankitkumar/Downloads/open-topper/docs/ai-handoff.md`
 
-### Important caveats
+### Important notes
 
-- I did **not** touch deploy/R2 validation/runtime data issues.
-- There are many unrelated modified/untracked files already in the repo; do not use `git add .`.
-- The mobile filter is still a body-level tap-open disclosure, not merged into the sticky header menu. That matches the user's latest "simple tap-to-open" preference more than the earlier merged-menu idea.
+- This fix is intentionally scoped to **preview deploy success**.
+- True production still expects explicit correct `R2_PUBLIC_URL` / `R2_ALLOWED_PUBLIC_HOSTS` config.
+- There are still many unrelated modified/untracked files in the repo. Do not use `git add .`.
 
 ### Exact next step
 
-- Stage only the four targeted code files plus `docs/ai-handoff.md`, commit, and push the branch. Then do a fresh manual small-mobile smoke test in the in-app browser or a real phone for `/browse`, one subject page, and one PDF viewer route.
+- Stage only the preview deploy-fix files, commit, and push. Then redeploy the preview branch in Vercel.
 
 ---
 

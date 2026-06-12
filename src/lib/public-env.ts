@@ -38,9 +38,15 @@ export function isSupabasePublicConfigured() {
 }
 
 export function isProductionLikePublicRuntime() {
-  return getPublicRuntimeEnv("NODE_ENV") === "production"
-    || getPublicRuntimeEnv("VERCEL_ENV") === "production"
-    || getPublicRuntimeEnv("NEXT_PUBLIC_VERCEL_ENV") === "production";
+  const nodeEnv = getPublicRuntimeEnv("NODE_ENV");
+  const vercelEnv = getPublicRuntimeEnv("VERCEL_ENV");
+  const publicVercelEnv = getPublicRuntimeEnv("NEXT_PUBLIC_VERCEL_ENV");
+
+  if (vercelEnv === "preview" || publicVercelEnv === "preview") return false;
+
+  return nodeEnv === "production"
+    || vercelEnv === "production"
+    || publicVercelEnv === "production";
 }
 
 function validateSupabasePublicUrl(rawUrl: string) {

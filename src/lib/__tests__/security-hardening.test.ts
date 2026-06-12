@@ -124,6 +124,19 @@ test("production secrets fail closed when missing or weak", () => {
   });
 });
 
+test("vercel preview remains fail-open for known default R2 preview host validation", () => {
+  withEnv({
+    NODE_ENV: "production",
+    VERCEL_ENV: "preview",
+    NEXT_PUBLIC_VERCEL_ENV: "preview",
+    R2_PUBLIC_URL: undefined,
+    R2_ALLOWED_PUBLIC_HOSTS: undefined,
+  }, () => {
+    assert.equal(isProductionLikeRuntime(), false);
+    assert.equal(normalizeAllowedR2PdfUrl(VALID_R2_URL), VALID_R2_URL);
+  });
+});
+
 test("temporary QA auth disable cannot force production auth off", () => {
   withEnv({
     NODE_ENV: "development",
