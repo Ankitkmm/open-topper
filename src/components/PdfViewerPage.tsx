@@ -40,7 +40,7 @@ const ZOOM_OPTIONS = [0.6, 0.7, 0.75, 0.8, 0.9, 1, 1.1, 1.25] as const;
 const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)";
 const SPREAD_OBSERVER_THRESHOLDS = [0.15, 0.35, 0.6, 0.9];
 const RENDER_WINDOW_RADIUS = 2;
-const DEFAULT_DESKTOP_ZOOM = 0.8;
+const DEFAULT_DESKTOP_ZOOM = 1;
 const DEFAULT_MOBILE_ZOOM = 0.6;
 
 function buildSpreads(pageCount: number, isDesktop: boolean) {
