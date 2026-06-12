@@ -7,7 +7,7 @@ import { normalizePublicTopperName } from "@/lib/public-records";
 type PdfModule = typeof import("pdfjs-dist");
 type LoadedPdfDocument = Awaited<ReturnType<PdfModule["getDocument"]>["promise"]>;
 
-type PdfLayoutMode = "auto" | "single" | "spread";
+type PdfPageMode = "auto" | "single" | "spread";
 
 type Spread = {
   key: string;
@@ -36,12 +36,12 @@ interface Props {
   sourceStatus: string | null;
 }
 
-const ZOOM_OPTIONS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25] as const;
+const ZOOM_OPTIONS = [0.6, 0.7, 0.75, 0.8, 0.9, 1, 1.1, 1.25] as const;
 const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)";
 const SPREAD_OBSERVER_THRESHOLDS = [0.15, 0.35, 0.6, 0.9];
 const RENDER_WINDOW_RADIUS = 2;
 const DEFAULT_DESKTOP_ZOOM = 0.8;
-const DEFAULT_MOBILE_ZOOM = 0.6;
+const DEFAULT_MOBILE_ZOOM = 0.7;
 
 function buildSpreads(pageCount: number, isDesktop: boolean) {
   if (pageCount < 1) return [] as Spread[];
@@ -221,7 +221,7 @@ export function PdfViewerPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [scale, setScale] = useState<(typeof ZOOM_OPTIONS)[number]>(DEFAULT_DESKTOP_ZOOM);
-  const [layoutMode, setLayoutMode] = useState<PdfLayoutMode>("auto");
+  const [pageMode, setPageMode] = useState<PdfPageMode>("auto");
   const [isDesktop, setIsDesktop] = useState(false);
   const [currentSpreadIndex, setCurrentSpreadIndex] = useState(0);
   const [anchorPageNumber, setAnchorPageNumber] = useState(Math.max(1, initialPage));
@@ -306,7 +306,11 @@ export function PdfViewerPage({
     };
   }, [initialPage, sourceUrl]);
 
-  const useSpreadLayout = isDesktop && (layoutMode === "spread" || layoutMode === "auto");
+  const useSpreadLayout = pageMode === "single"
+    ? false
+    : pageMode === "spread"
+      ? true
+      : isDesktop;
   const spreads = useMemo(() => buildSpreads(pageCount, useSpreadLayout), [pageCount, useSpreadLayout]);
 
   const initialSpreadIndex = useMemo(() => {
@@ -475,7 +479,7 @@ export function PdfViewerPage({
           </div>
         </div>
 
-        <div className="soft-panel flex flex-col gap-3 p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="soft-panel flex flex-wrap items-center justify-between gap-3 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -495,7 +499,7 @@ export function PdfViewerPage({
             </button>
           </div>
 
-          <div className="flex w-full flex-wrap items-center gap-2 text-sm text-secondary sm:w-auto sm:justify-end">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-secondary">
             <label className="study-badge" htmlFor="pdf-page-input">Go to page</label>
             <input
               id="pdf-page-input"
@@ -517,20 +521,18 @@ export function PdfViewerPage({
               }}
               className="soft-input h-10 w-24 px-3 text-sm"
             />
-            <label className="study-badge" htmlFor="pdf-layout-select">Layout</label>
+            <label className="study-badge" htmlFor="pdf-page-mode">Pages</label>
             <select
-              id="pdf-layout-select"
+              id="pdf-page-mode"
               className="soft-input h-10 px-3 text-sm"
-              value={layoutMode}
-              onChange={(event) => setLayoutMode(event.currentTarget.value as PdfLayoutMode)}
-              aria-label="PDF page layout"
+              value={pageMode}
+              onChange={(event) => setPageMode(event.currentTarget.value as PdfPageMode)}
             >
               <option value="auto">Auto</option>
               <option value="single">One page</option>
-              <option value="spread" disabled={!isDesktop}>Two page (desktop)</option>
+              <option value="spread">Two page</option>
             </select>
             <select
-              aria-label="PDF zoom"
               className="soft-input h-10 px-3 text-sm"
               value={String(scale)}
               onChange={(event) => {

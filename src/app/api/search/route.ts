@@ -117,7 +117,7 @@ async function searchWorkspaceShells(options: {
   return questions.map(toWorkspaceQuestionShell);
 }
 
-export function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {
+function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {
   const value = syllabusId.trim();
   if (!value) return "";
   if (!subjectKey) return value;

@@ -70,10 +70,9 @@ export function StudyNav() {
             className="nav-pill"
             data-active={pathname.startsWith("/browse")}
             aria-label="Search all questions"
-            title="Search all questions"
           >
             <Search size={15} aria-hidden="true" />
-            <span>Search</span>
+            <span className="hidden sm:inline">Search</span>
           </Link>
           <ThemeSwitcher compact />
           <AuthControls compact />

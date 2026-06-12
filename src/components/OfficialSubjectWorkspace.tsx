@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Loader2, Search, Sparkles } from "lucide-react";
+import { ChevronDown, ExternalLink, Loader2, Search, Sparkles } from "lucide-react";
 import { useUserData } from "@/components/auth/UserDataProvider";
 import { StudyNav } from "@/components/StudyNav";
 import { ProgressToggle } from "./ProgressToggle";
@@ -175,7 +175,10 @@ export function OfficialSubjectWorkspace({
   async function openPdf(answerId: string) {
     setLoadingAnswer(answerId);
     setViewerError(null);
-    const tab = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    const isDesktopViewport = typeof window !== "undefined"
+      ? window.matchMedia("(min-width: 768px)").matches
+      : false;
+    const tab = isDesktopViewport && typeof window !== "undefined" ? window.open("", "_blank") : null;
     if (tab) tab.opener = null;
     try {
       const response = await fetch("/api/answer-source", {
@@ -193,8 +196,11 @@ export function OfficialSubjectWorkspace({
       if (!response.ok || !viewerUrl) {
         throw new Error(payload?.error || "PDF could not be opened.");
       }
-      if (tab) tab.location.href = viewerUrl;
-      else window.open(viewerUrl, "_blank", "noopener,noreferrer");
+      if (tab) {
+        tab.location.href = viewerUrl;
+      } else if (typeof window !== "undefined") {
+        window.location.assign(viewerUrl);
+      }
       trackActivity(2);
     } catch (error) {
       if (tab) tab.close();
@@ -233,7 +239,63 @@ export function OfficialSubjectWorkspace({
         </div>
 
         <div className="mt-8 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-6">
-          <aside className="soft-panel mobile-syllabus-panel flex max-h-[22rem] flex-col p-4 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-6rem)]">
+          <details className="nav-dd soft-panel p-0 lg:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="overline mb-1">Filters</div>
+                <div className="text-sm text-secondary">
+                  {activeSyllabusLabel || "Filter topics"}
+                </div>
+              </div>
+              <ChevronDown size={16} aria-hidden="true" className="nav-dd-chevron shrink-0" />
+            </summary>
+            <div className="nav-dd-divider" />
+            <div className="mobile-syllabus-panel flex max-h-[20rem] flex-col p-4">
+              <button
+                type="button"
+                className={selectedSyllabusId ? "nav-pill shrink-0" : "btn-primary w-full shrink-0 justify-start"}
+                data-active={!selectedSyllabusId}
+                onClick={() => navigateTo(query, "")}
+              >
+                All topics
+              </button>
+
+              <div className="nav-scroll mt-4 grid gap-4 overflow-y-auto pr-1">
+                {groupNodes.map((group) => {
+                  const children = topicNodes.filter((node) => node.parentId === group.id);
+                  if (!children.length) return null;
+                  return (
+                    <section key={group.id} className="grid gap-1">
+                      <div
+                        className="text-xs font-semibold uppercase tracking-[0.08em] transition-colors"
+                        style={{ color: activeGroupId === group.id ? "var(--accent)" : "var(--fg-muted)" }}
+                      >
+                        {group.label}
+                      </div>
+                      {children.map((node) => {
+                        const active = selectedSyllabusId === node.id;
+                        return (
+                          <button
+                            key={node.id}
+                            ref={active ? activeTopicRef : undefined}
+                            type="button"
+                            className="topic-row"
+                            data-active={active}
+                            onClick={() => navigateTo(query, node.id)}
+                          >
+                            <span className="leading-6">{node.label}</span>
+                            <span className="mono-stat text-xs text-muted">{node.questionCount}</span>
+                          </button>
+                        );
+                      })}
+                    </section>
+                  );
+                })}
+              </div>
+            </div>
+          </details>
+
+          <aside className="hidden soft-panel flex-col p-4 lg:sticky lg:top-[4.5rem] lg:flex lg:max-h-[calc(100vh-6rem)]">
             <div className="overline mb-3 shrink-0">Syllabus</div>
             <button
               type="button"

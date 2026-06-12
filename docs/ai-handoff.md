@@ -3,32 +3,25 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-13 16:45 IST · By: Codex
+Last updated: 2026-06-13 18:40 IST · By: Codex
 
-## Mobile PDF + rate-limit quick-fix handoff
+## PDF/mobile regression-fix handoff
 
-I made a focused pass for the user’s “fix mobile quickly, add one-page PDF option, tighten navigation, add rate limiting, and push” request.
+I followed the user correction that the prior pass over-changed the PDF viewer. This pass restores the older viewer behavior and reapplies only the requested improvements: better mobile sizing, explicit one-page/two-page mode, same-tab mobile PDF open, and simple tap-to-open filters on mobile subject pages.
 
 ### What I changed
 
-- **PDF viewer mobile/layout fixes**
-  - Added a **Layout** control with `Auto`, `One page`, and `Two page (desktop)` modes.
-  - Kept desktop spread behavior in auto mode, while mobile now stays in single-page mode.
-  - Added lower mobile zoom options and a lower default mobile zoom (`60%`) so pages fit better on phones.
-  - Fixed the layout-mode tracking bug so switching layout/device mode does not use the wrong remembered spread state.
-  - Increased the PDF reading pane height on mobile (`76vh`) and reduced inner padding slightly to show more page area.
-- **Mobile navigation / subject layout**
-  - Made `StudyNav` wrap more cleanly on small screens.
-  - Kept the paper pills in their own scrollable row on mobile.
-  - Kept the **Search** label visible on mobile instead of icon-only.
-  - Tightened mobile nav/theme sizing and capped the syllabus side panel height for better scrolling on phones.
-- **Rate limiting**
-  - Added a dedicated rate limit to `POST /api/answer-source` (`scope: "answer-source"`) so PDF-open token issuance can be tuned separately from the stricter PDF byte-stream guard already enforced in `enforcePdfAccess()`.
-  - Added `getAnswerSourceRateLimitMax()` with a default of `30` requests/window.
-  - Extended the security/env test to cover the new env parsing path.
-- **Task/docs cleanup**
-  - Updated `docs/ai-tasks.md` backlog wording to reflect that `/api/answer-source` was already indirectly rate-limited and now needs tuning/review rather than first-time protection.
-  - Added a decision entry recording the separate answer-source issuance limiter.
+- Restored `PdfViewerPage` behavior back toward the older stable model from `24fafd5`.
+- Kept the original viewer structure and navigation model, then added only:
+  - lower mobile-friendly zoom values (`0.6`, `0.7`)
+  - mobile default zoom `70%`
+  - slightly taller / tighter mobile viewer container
+  - a new **Pages** selector with `Auto`, `One page`, `Two page`
+- Preserved stable page-jump behavior while making page mode switch additive rather than a full redesign.
+- Kept desktop/new-tab PDF open, but changed mobile PDF open to **same-tab** in `OfficialSubjectWorkspace`.
+- Preserved the mobile filter disclosure in the subject page body, but simplified its labeling to **Filters** so it is clearer on small devices.
+- Reverted the over-aggressive mobile header/theme/account redesign and returned to the simpler header baseline.
+- Fixed one existing unrelated Next 16 route typing issue by making `resolveOfficialSyllabusFilter()` internal-only inside `src/app/api/search/route.ts`.
 
 ### Verification
 
@@ -36,33 +29,30 @@ I made a focused pass for the user’s “fix mobile quickly, add one-page PDF o
 - `npm run typecheck` → pass
 - `npm test` → pass
 
+### Browser / manual verification notes
+
+- The in-app browser tab list now shows the real app again at `http://localhost:3000/browse` with title `Browse All Questions - UPSCat`.
+- I could inspect the live browse-page DOM successfully in the Browser plugin.
+- Deeper browser automation on `/gs1` and screenshot capture became flaky/time-limited in this session, so full visual confirmation of subject/PDF pages in the Browser plugin remains incomplete.
+- This looks like browser-runtime flakiness rather than the earlier hard localhost refusal state.
+
 ### Files changed by Codex in this pass
 
-Code/UI files:
 - `/Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx`
-- `/Users/ankitkumar/Downloads/open-topper/src/components/StudyNav.tsx`
 - `/Users/ankitkumar/Downloads/open-topper/src/components/OfficialSubjectWorkspace.tsx`
-- `/Users/ankitkumar/Downloads/open-topper/src/app/globals.css`
-- `/Users/ankitkumar/Downloads/open-topper/src/app/api/answer-source/route.ts`
-- `/Users/ankitkumar/Downloads/open-topper/src/lib/env.ts`
-- `/Users/ankitkumar/Downloads/open-topper/src/lib/__tests__/security-hardening.test.ts`
-
-Coordination/docs touched in working tree:
+- `/Users/ankitkumar/Downloads/open-topper/src/components/StudyNav.tsx`
+- `/Users/ankitkumar/Downloads/open-topper/src/app/api/search/route.ts`
 - `/Users/ankitkumar/Downloads/open-topper/docs/ai-handoff.md`
-- `/Users/ankitkumar/Downloads/open-topper/docs/ai-decisions.md`
-- `/Users/ankitkumar/Downloads/open-topper/docs/ai-tasks.md`
-- `/Users/ankitkumar/Downloads/open-topper/.env.example`
-- `/Users/ankitkumar/Downloads/open-topper/README.md`
 
-### Important notes / caveats
+### Important caveats
 
-- I could not do a real Browser-plugin mobile visual verification because the in-app browser could not connect to the local dev server from its network context (`ERR_CONNECTION_REFUSED`), even though `next dev` started successfully in shell.
-- A read-only subagent review confirmed that `/api/answer-source` already had indirect rate limiting via `enforcePdfAccess()`; this pass adds a **separate issuance limiter** rather than the first limiter on that flow.
-- The workspace already had many unrelated modified/untracked files before this pass. Be careful to stage only the intended paths. Do **not** use `git add .`.
+- I did **not** touch deploy/R2 validation/runtime data issues.
+- There are many unrelated modified/untracked files already in the repo; do not use `git add .`.
+- The mobile filter is still a body-level tap-open disclosure, not merged into the sticky header menu. That matches the user's latest "simple tap-to-open" preference more than the earlier merged-menu idea.
 
 ### Exact next step
 
-- Stage only the focused mobile/PDF/rate-limit files (plus any desired handoff/docs hunks), commit them, and push the current branch. After push, do a manual phone-browser smoke test against a deployed preview or a reachable local environment.
+- Stage only the four targeted code files plus `docs/ai-handoff.md`, commit, and push the branch. Then do a fresh manual small-mobile smoke test in the in-app browser or a real phone for `/browse`, one subject page, and one PDF viewer route.
 
 ---
 
