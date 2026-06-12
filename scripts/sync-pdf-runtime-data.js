@@ -5,6 +5,14 @@ const path = require("path");
 const ROOT = path.resolve(__dirname, "..");
 const SOURCE_DIR = path.join(ROOT, "data", "app");
 const TARGET_DIR = path.join(ROOT, "data", "pdf-runtime");
+const DEFAULT_RUNTIME_R2_HOSTS = new Set([
+  // Committed production/runtime fallback data currently points at this public
+  // Cloudflare R2 custom-public bucket. Vercel production builds may not have
+  // R2_ALLOWED_PUBLIC_HOSTS configured yet, so keep this known checked-in host
+  // allowlisted while still rejecting non-R2/unknown hosts.
+  "pub-3476e7cc4efd44b58da659c67aad1348.r2.dev",
+]);
+
 const FILES = [
   { name: "answer-sources.json", validate: validateAnswerSources },
   { name: "pdf-r2-map.json", validate: validatePdfR2Map },
@@ -154,10 +162,7 @@ function isAllowedRuntimePdfUrl(url) {
 function isAllowedRuntimeR2Host(hostname) {
   const host = String(hostname || "").toLowerCase();
   const configured = configuredR2PublicHostnames();
-  if (isProductionLikeRuntime()) return configured.has(host);
-
-  return configured.has(host)
-    || host === "pub-3476e7cc4efd44b58da659c67aad1348.r2.dev";
+  return configured.has(host) || DEFAULT_RUNTIME_R2_HOSTS.has(host);
 }
 
 function configuredR2PublicHostnames() {
