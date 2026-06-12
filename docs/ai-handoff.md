@@ -3,11 +3,11 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-13 20:45 IST · By: Codex
+Last updated: 2026-06-13 20:55 IST · By: Codex
 
 ## Option B surgical production rollout
 
-The user chose **Option B**: do not ship the whole 13-commit feature stack to production. I created a clean worktree from the current `origin/main` (`bf1faf0`) and applied only the PDF/mobile/deploy-related fixes in this commit (`Ship PDF mobile and preview deploy fixes`).
+The user chose **Option B**: do not ship the whole 13-commit feature stack to production. I created a clean worktree from `origin/main` (`bf1faf0`), applied only the PDF/mobile/deploy-related fixes, committed them as `4bada07` (`Ship PDF mobile and preview deploy fixes`), and pushed that commit to `origin/main`.
 
 ### What changed
 
@@ -67,4 +67,4 @@ All commands ran from `/Users/ankitkumar/Downloads/open-topper-option-b-main`:
 
 ### Exact next step
 
-Push the current `codex/option-b-pdf-deploy-main` commit to `origin/main` (not the local accidental merge commit on `main`), then monitor the production deployment.
+Monitor the production deployment for commit `4bada07`, especially mobile PDF open/viewer behavior and the PDF runtime-data sync step. Do not push the local accidental merge commit from the separate `main` worktree.
