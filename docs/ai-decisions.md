@@ -46,3 +46,5 @@
 - 2026-06-06: Auth is temporarily forced off in code for QA so public detail/PDF flows stay open without sign-in while token/origin/rate-limit protections remain in place.
 - 2026-06-06: Public `/api/search` ranking is relevance-first; exact/strong question-text matches outrank newer-year or higher-copy-count metadata, which now only breaks ties.
 - 2026-06-06: Official subject-page syllabus filters resolve node IDs to syllabus labels and use meaningful topic-term matching instead of fuzzy slug-token matching.
+- 2026-06-13: The PDF open/token issuance route (`POST /api/answer-source`) is rate-limited separately from PDF byte-stream fetches so mobile/PDF open bursts can be tuned without weakening stricter `/pdf/*` fetch protections.
+- 2026-06-13: PDF runtime-data validation treats Vercel preview deployments as non-production-like so committed fallback R2 data can validate in previews while production still requires configured allowed R2 hosts.

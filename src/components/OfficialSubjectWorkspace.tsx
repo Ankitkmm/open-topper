@@ -156,7 +156,10 @@ export function OfficialSubjectWorkspace({
   async function openPdf(answerId: string) {
     setLoadingAnswer(answerId);
     setViewerError(null);
-    const tab = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    const isDesktopViewport = typeof window !== "undefined"
+      ? window.matchMedia("(min-width: 768px)").matches
+      : false;
+    const tab = isDesktopViewport && typeof window !== "undefined" ? window.open("", "_blank") : null;
     if (tab) tab.opener = null;
     try {
       const response = await fetch("/api/answer-source", {
@@ -174,8 +177,11 @@ export function OfficialSubjectWorkspace({
       if (!response.ok || !viewerUrl) {
         throw new Error(payload?.error || "PDF could not be opened.");
       }
-      if (tab) tab.location.href = viewerUrl;
-      else window.open(viewerUrl, "_blank", "noopener,noreferrer");
+      if (tab) {
+        tab.location.href = viewerUrl;
+      } else if (typeof window !== "undefined") {
+        window.location.assign(viewerUrl);
+      }
       trackActivity(2);
     } catch (error) {
       if (tab) tab.close();

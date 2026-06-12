@@ -2,9 +2,12 @@
 
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { normalizePublicTopperName } from "@/lib/public-records";
 
 type PdfModule = typeof import("pdfjs-dist");
 type LoadedPdfDocument = Awaited<ReturnType<PdfModule["getDocument"]>["promise"]>;
+
+type PdfPageMode = "auto" | "single" | "spread";
 
 type Spread = {
   key: string;
@@ -33,10 +36,12 @@ interface Props {
   sourceStatus: string | null;
 }
 
-const ZOOM_OPTIONS = [0.75, 0.8, 0.9, 1, 1.1, 1.25] as const;
+const ZOOM_OPTIONS = [0.6, 0.7, 0.75, 0.8, 0.9, 1, 1.1, 1.25] as const;
 const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)";
 const SPREAD_OBSERVER_THRESHOLDS = [0.15, 0.35, 0.6, 0.9];
 const RENDER_WINDOW_RADIUS = 2;
+const DEFAULT_DESKTOP_ZOOM = 1;
+const DEFAULT_MOBILE_ZOOM = 0.6;
 
 function buildSpreads(pageCount: number, isDesktop: boolean) {
   if (pageCount < 1) return [] as Spread[];
@@ -134,8 +139,9 @@ function PageCanvas({
 
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.style.width = isDesktop ? `${Math.floor(viewport.width)}px` : "100%";
+        canvas.style.height = isDesktop ? `${Math.floor(viewport.height)}px` : "auto";
+        canvas.style.maxWidth = "100%";
 
         const task = page.render({
           canvas,
@@ -161,7 +167,7 @@ function PageCanvas({
       cancelled = true;
       renderTaskRef.current?.cancel?.();
     };
-  }, [pageNumber, pdfDocument, scale]);
+  }, [isDesktop, pageNumber, pdfDocument, scale]);
 
   return (
     <PageShell
@@ -177,7 +183,7 @@ function PageCanvas({
         </div>
       )}
       {status === "error" && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-secondary">
+        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-secondary" role="alert">
           <div>
             <p className="font-semibold text-primary">Page {pageNumber} could not be rendered.</p>
             <p className="mt-2">{error}</p>
@@ -186,7 +192,7 @@ function PageCanvas({
       )}
       <canvas
         ref={canvasRef}
-        className={status === "ready" ? "block" : "invisible absolute inset-0"}
+        className={status === "ready" ? "block max-w-full" : "invisible absolute inset-0 max-w-full"}
         aria-label={`PDF page ${pageNumber}`}
       />
     </PageShell>
@@ -207,18 +213,21 @@ export function PdfViewerPage({
   const visibleSpreadRatiosRef = useRef<Map<string, number>>(new Map());
   const didInitialScrollRef = useRef(false);
   const lastLayoutModeRef = useRef<boolean | null>(null);
+  const userSelectedZoomRef = useRef(false);
   const [pdfDocument, setPdfDocument] = useState<LoadedPdfDocument | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [basePageWidth, setBasePageWidth] = useState(612);
   const [baseAspectRatio, setBaseAspectRatio] = useState(1 / Math.sqrt(2));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [scale, setScale] = useState<(typeof ZOOM_OPTIONS)[number]>(0.8);
+  const [scale, setScale] = useState<(typeof ZOOM_OPTIONS)[number]>(DEFAULT_DESKTOP_ZOOM);
+  const [pageMode, setPageMode] = useState<PdfPageMode>("auto");
   const [isDesktop, setIsDesktop] = useState(false);
   const [currentSpreadIndex, setCurrentSpreadIndex] = useState(0);
   const [anchorPageNumber, setAnchorPageNumber] = useState(Math.max(1, initialPage));
   const [pageInputDraft, setPageInputDraft] = useState(String(Math.max(1, initialPage)));
   const [isEditingPageInput, setIsEditingPageInput] = useState(false);
+  const publicTopperName = normalizePublicTopperName(topperName) ?? "Topper copy";
 
   const registerSpreadElement = useCallback((spreadKey: string, element: HTMLDivElement | null) => {
     spreadRefs.current.set(spreadKey, element);
@@ -228,7 +237,13 @@ export function PdfViewerPage({
     if (typeof window === "undefined") return;
 
     const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
-    const update = () => setIsDesktop(mediaQuery.matches);
+    const update = () => {
+      const nextIsDesktop = mediaQuery.matches;
+      setIsDesktop(nextIsDesktop);
+      if (!userSelectedZoomRef.current) {
+        setScale(nextIsDesktop ? DEFAULT_DESKTOP_ZOOM : DEFAULT_MOBILE_ZOOM);
+      }
+    };
     update();
 
     mediaQuery.addEventListener("change", update);
@@ -291,7 +306,12 @@ export function PdfViewerPage({
     };
   }, [initialPage, sourceUrl]);
 
-  const spreads = useMemo(() => buildSpreads(pageCount, isDesktop), [isDesktop, pageCount]);
+  const useSpreadLayout = pageMode === "single"
+    ? false
+    : pageMode === "spread"
+      ? true
+      : isDesktop;
+  const spreads = useMemo(() => buildSpreads(pageCount, useSpreadLayout), [pageCount, useSpreadLayout]);
 
   const initialSpreadIndex = useMemo(() => {
     if (!spreads.length) return 0;
@@ -363,14 +383,14 @@ export function PdfViewerPage({
 
   useEffect(() => {
     if (lastLayoutModeRef.current === null) {
-      lastLayoutModeRef.current = isDesktop;
+      lastLayoutModeRef.current = useSpreadLayout;
       return;
     }
-    if (lastLayoutModeRef.current === isDesktop || loading || !spreads.length) return;
+    if (lastLayoutModeRef.current === useSpreadLayout || loading || !spreads.length) return;
 
-    lastLayoutModeRef.current = isDesktop;
+    lastLayoutModeRef.current = useSpreadLayout;
     requestAnimationFrame(() => scrollToPage(anchorPageNumber, "auto"));
-  }, [anchorPageNumber, isDesktop, loading, scrollToPage, spreads]);
+  }, [anchorPageNumber, loading, scrollToPage, spreads, useSpreadLayout]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -435,31 +455,36 @@ export function PdfViewerPage({
   const positionBadge = useMemo(() => {
     if (!currentSpread || !pageCount) return "Preparing pages";
     const [firstPage, secondPage] = currentSpread.pages;
-    const spreadLabel = `Spread ${activeSpreadIndex + 1} / ${spreads.length}`;
     const safeAnchorPage = Math.min(Math.max(1, anchorPageNumber), pageCount);
+    if (!useSpreadLayout) return `Page ${safeAnchorPage} / ${pageCount}`;
+    const spreadLabel = `Spread ${activeSpreadIndex + 1} / ${spreads.length}`;
     if (secondPage) return `${spreadLabel} · Page ${safeAnchorPage} (${firstPage}-${secondPage}) / ${pageCount}`;
     return `${spreadLabel} · Page ${firstPage} / ${pageCount}`;
-  }, [activeSpreadIndex, anchorPageNumber, currentSpread, pageCount, spreads.length]);
+  }, [activeSpreadIndex, anchorPageNumber, currentSpread, pageCount, spreads.length, useSpreadLayout]);
 
   return (
-    <main className="library-page min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <div className="soft-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="overline mb-2">PDF viewer</div>
-            <h1 className="text-2xl sm:text-3xl">{topperName || "Topper copy"}</h1>
-            <p className="mt-2 text-sm text-secondary">
-              OCR/AI study aids can be imperfect. Verify against the original PDF page before relying on summary or matching cues.
-            </p>
+    <main className="library-page min-h-screen px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:gap-5">
+        {isDesktop && (
+          <div className="soft-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="overline mb-2">PDF viewer</div>
+              <h1 className="text-2xl sm:text-3xl">{publicTopperName}</h1>
+              <p className="mt-2 text-sm text-secondary">
+                OCR/AI study aids can be imperfect. Verify against the original PDF page before relying on summary or matching cues.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="study-badge study-badge-accent">{positionBadge}</span>
+              {statusBadge && <span className="study-badge">{statusBadge}</span>}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className="study-badge study-badge-accent">{positionBadge}</span>
-            {statusBadge && <span className="study-badge">{statusBadge}</span>}
-          </div>
-        </div>
+        )}
 
-        <div className="soft-panel flex flex-wrap items-center justify-between gap-3 p-3">
+        <div className="soft-panel flex flex-wrap items-center justify-between gap-2 p-2.5 sm:gap-3 sm:p-3">
           <div className="flex flex-wrap items-center gap-2">
+            {!isDesktop && <span className="study-badge study-badge-accent">{positionBadge}</span>}
+            {!isDesktop && statusBadge && <span className="study-badge">{statusBadge}</span>}
             <button
               type="button"
               className="btn-secondary"
@@ -500,10 +525,24 @@ export function PdfViewerPage({
               }}
               className="soft-input h-10 w-24 px-3 text-sm"
             />
+            <label className="study-badge" htmlFor="pdf-page-mode">Pages</label>
+            <select
+              id="pdf-page-mode"
+              className="soft-input h-10 px-3 text-sm"
+              value={pageMode}
+              onChange={(event) => setPageMode(event.currentTarget.value as PdfPageMode)}
+            >
+              <option value="auto">Auto</option>
+              <option value="single">One page</option>
+              <option value="spread">Two page</option>
+            </select>
             <select
               className="soft-input h-10 px-3 text-sm"
               value={String(scale)}
-              onChange={(event) => setScale((Number(event.currentTarget.value) || 0.8) as (typeof ZOOM_OPTIONS)[number])}
+              onChange={(event) => {
+                userSelectedZoomRef.current = true;
+                setScale((Number(event.currentTarget.value) || DEFAULT_DESKTOP_ZOOM) as (typeof ZOOM_OPTIONS)[number]);
+              }}
             >
               {ZOOM_OPTIONS.map((zoom) => (
                 <option key={zoom} value={zoom}>
@@ -514,15 +553,15 @@ export function PdfViewerPage({
           </div>
         </div>
 
-        <div ref={scrollContainerRef} className="soft-panel h-[72vh] overflow-auto p-4 sm:h-[78vh] sm:p-6">
+        <div ref={scrollContainerRef} className="soft-panel h-[84vh] overflow-auto p-2 sm:h-[78vh] sm:p-6">
           {loading && (
-            <div className="flex min-h-full flex-col items-center justify-center gap-3 text-secondary">
+            <div className="flex min-h-full flex-col items-center justify-center gap-3 text-secondary" role="status" aria-live="polite">
               <Loader2 size={24} className="animate-spin" aria-hidden="true" />
               <p>Loading document…</p>
             </div>
           )}
           {error && !loading && (
-            <div className="flex min-h-full items-center justify-center">
+            <div className="flex min-h-full items-center justify-center" role="alert">
               <div className="max-w-xl text-center text-secondary">
                 <p className="font-semibold text-primary">PDF could not be loaded.</p>
                 <p className="mt-2 text-sm">{error}</p>
@@ -563,7 +602,7 @@ export function PdfViewerPage({
           )}
         </div>
 
-        <div className="text-center text-xs text-muted">
+        <div className={`text-center text-xs text-muted ${isDesktop ? "" : "hidden"}`}>
           Answer id: <span className="mono-stat">{answerId}</span>
         </div>
       </div>
