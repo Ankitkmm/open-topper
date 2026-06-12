@@ -41,7 +41,7 @@ const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)";
 const SPREAD_OBSERVER_THRESHOLDS = [0.15, 0.35, 0.6, 0.9];
 const RENDER_WINDOW_RADIUS = 2;
 const DEFAULT_DESKTOP_ZOOM = 0.8;
-const DEFAULT_MOBILE_ZOOM = 0.7;
+const DEFAULT_MOBILE_ZOOM = 0.6;
 
 function buildSpreads(pageCount: number, isDesktop: boolean) {
   if (pageCount < 1) return [] as Spread[];
@@ -463,24 +463,28 @@ export function PdfViewerPage({
   }, [activeSpreadIndex, anchorPageNumber, currentSpread, pageCount, spreads.length, useSpreadLayout]);
 
   return (
-    <main className="library-page min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <div className="soft-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="overline mb-2">PDF viewer</div>
-            <h1 className="text-2xl sm:text-3xl">{publicTopperName}</h1>
-            <p className="mt-2 text-sm text-secondary">
-              OCR/AI study aids can be imperfect. Verify against the original PDF page before relying on summary or matching cues.
-            </p>
+    <main className="library-page min-h-screen px-3 py-3 sm:px-6 sm:py-6 lg:px-8">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 sm:gap-5">
+        {isDesktop && (
+          <div className="soft-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="overline mb-2">PDF viewer</div>
+              <h1 className="text-2xl sm:text-3xl">{publicTopperName}</h1>
+              <p className="mt-2 text-sm text-secondary">
+                OCR/AI study aids can be imperfect. Verify against the original PDF page before relying on summary or matching cues.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <span className="study-badge study-badge-accent">{positionBadge}</span>
+              {statusBadge && <span className="study-badge">{statusBadge}</span>}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className="study-badge study-badge-accent">{positionBadge}</span>
-            {statusBadge && <span className="study-badge">{statusBadge}</span>}
-          </div>
-        </div>
+        )}
 
-        <div className="soft-panel flex flex-wrap items-center justify-between gap-3 p-3">
+        <div className="soft-panel flex flex-wrap items-center justify-between gap-2 p-2.5 sm:gap-3 sm:p-3">
           <div className="flex flex-wrap items-center gap-2">
+            {!isDesktop && <span className="study-badge study-badge-accent">{positionBadge}</span>}
+            {!isDesktop && statusBadge && <span className="study-badge">{statusBadge}</span>}
             <button
               type="button"
               className="btn-secondary"
@@ -549,7 +553,7 @@ export function PdfViewerPage({
           </div>
         </div>
 
-        <div ref={scrollContainerRef} className="soft-panel h-[76vh] overflow-auto p-3 sm:h-[78vh] sm:p-6">
+        <div ref={scrollContainerRef} className="soft-panel h-[84vh] overflow-auto p-2 sm:h-[78vh] sm:p-6">
           {loading && (
             <div className="flex min-h-full flex-col items-center justify-center gap-3 text-secondary" role="status" aria-live="polite">
               <Loader2 size={24} className="animate-spin" aria-hidden="true" />
@@ -598,7 +602,7 @@ export function PdfViewerPage({
           )}
         </div>
 
-        <div className="text-center text-xs text-muted">
+        <div className={`text-center text-xs text-muted ${isDesktop ? "" : "hidden"}`}>
           Answer id: <span className="mono-stat">{answerId}</span>
         </div>
       </div>
