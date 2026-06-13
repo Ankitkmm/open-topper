@@ -3,6 +3,68 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
+Last updated: 2026-06-14 01:14 IST · By: Codex
+
+## Release cleanup + migration prep commits complete
+
+### Summary
+
+Executed the safe follow-up work from the Kiro handoff and committed it in focused commits. No `git add .` was used. Private generated answer-source files were not staged. Full verification passed.
+
+### Commits created
+
+- `1e5f4c4` docs: add migration and operations runbooks
+- `09b2524` ci: add production verification workflow
+- `ede252a` chore: add operational verification scripts
+- `79ae239` chore: update agent and lint tooling
+- `7684e80` feat: add offline progress queue
+- `dddc28c` fix: hide marks badges in study cards
+- `85f9d13` chore: keep production dependencies audit-clean
+- `0755e84` feat: align feedback schema end-to-end
+- `620c609` feat: add authoritative optional PYQ sources
+- `882ace3` docs: replace template readme with project runbook
+- `ec2e09b` fix: use legacy pdfjs browser build
+- `d6e355d` chore: add edge runtime migration probe
+
+### Verification
+
+- `npm run lint -- --no-fix` → pass
+- `npm run typecheck` → pass
+- `npm test` → pass (42 tests)
+- `npm run build-pyqs` → pass (`1,469` official questions, `30,138` linked copies)
+- `npm run verify` → pass, including production build and public PDF leak checks
+- Expected build warning: `/about` uses `export const runtime = "edge"`, so it is dynamic (`ƒ`) instead of static. This is intentional as a Cloudflare edge migration probe.
+
+### Files intentionally not committed
+
+Untracked scratch/junk remains and should not be staged unless manually reviewed:
+
+```text
+how does one do this, Based on the video transcript, the cre….md
+new/
+optional scraping.md/
+scrap_essay.md/
+scripts/ai/
+sociology.md/
+transit_station_collector.py
+untitled folder/
+```
+
+Private/generated answer-source files were restored after verification and are clean.
+
+### External migration blockers / exact next step
+
+1. **Supabase Mumbai:** Create a new Supabase project in `ap-south-1` (Mumbai), apply `supabase/migrations/20260605_user_progress.sql` and `supabase/migrations/20260615_feedback.sql`, then swap deployment env vars. Do not delete the old project until at least 1 week after cutover.
+2. **Cloudflare:** Create/confirm Cloudflare account access and approve adding the deployment integration/token before Cloudflare Pages work. Code is not yet Cloudflare-ready; next local phase is `fs` → static JSON imports and `pg` replacement.
+3. **Deploy/release:** Push this branch and deploy to the current Vercel path first if desired. Cloudflare cutover should wait until the migration checklist phases are complete.
+
+---
+
+# Latest handoff
+
+> The single most important file. The next agent (any tool) continues from here.
+> Overwrite the sections below after each meaningful chunk of work.
+
 Last updated: 2026-06-14 02:30 IST · By: Kiro
 
 ## Migration Prep Audit Complete
