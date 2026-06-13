@@ -48,3 +48,5 @@
 - 2026-06-06: Official subject-page syllabus filters resolve node IDs to syllabus labels and use meaningful topic-term matching instead of fuzzy slug-token matching.
 - 2026-06-13: The PDF open/token issuance route (`POST /api/answer-source`) is rate-limited separately from PDF byte-stream fetches so mobile/PDF open bursts can be tuned without weakening stricter `/pdf/*` fetch protections.
 - 2026-06-13: PDF runtime-data validation treats Vercel preview deployments as non-production-like so committed fallback R2 data can validate in previews while production still requires configured allowed R2 hosts.
+- 2026-06-13: Feedback is implemented as a global in-app bottom-left launcher + modal, not a third-party widget, so every public page keeps the same calm product surface and users can report issues without leaving the site.
+- 2026-06-13: Public feedback submissions post to a private no-store `/api/feedback` route with optional reply email, one optional image attachment, conservative rate limiting, and Resend-backed delivery to `founder@upscat.click` when `RESEND_API_KEY` is configured.

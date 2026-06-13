@@ -1,5 +1,6 @@
 "use client";
 
+import { FeedbackWidget } from "./FeedbackWidget";
 import { ThemeProvider } from "./ThemeProvider";
 
 interface AppShellProps {
@@ -7,5 +8,10 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
-  return <ThemeProvider>{children}</ThemeProvider>;
+  return (
+    <ThemeProvider>
+      {children}
+      <FeedbackWidget />
+    </ThemeProvider>
+  );
 }

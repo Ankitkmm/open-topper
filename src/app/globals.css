@@ -878,3 +878,99 @@ html {
   color: var(--accent-strong);
   font-weight: 600;
 }
+
+/* ---- Global feedback widget ---- */
+.feedback-launcher {
+  position: fixed;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.65rem 0.95rem;
+  backdrop-filter: blur(14px);
+  transition: transform 0.18s var(--ease), background 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+
+.feedback-launcher:hover {
+  transform: translateY(-2px);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.feedback-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  align-items: end;
+  justify-items: start;
+  padding: 1rem;
+  background: color-mix(in srgb, black 28%, transparent);
+}
+
+.feedback-dialog {
+  width: min(100%, 32rem);
+  max-height: min(86vh, 44rem);
+  overflow: auto;
+  padding: 1.25rem;
+  box-shadow: var(--shadow-lg);
+}
+
+.feedback-file-drop {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 2.8rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-elevated) 78%, transparent);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.875rem;
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+
+.feedback-file-drop:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--fg-primary);
+}
+
+.feedback-file-drop input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .feedback-launcher {
+    min-height: 2.45rem;
+    padding: 0.58rem 0.78rem;
+    font-size: 0.82rem;
+  }
+
+  .feedback-backdrop {
+    align-items: end;
+    padding: 0.75rem;
+  }
+
+  .feedback-dialog {
+    width: 100%;
+    max-height: 88vh;
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+  }
+}

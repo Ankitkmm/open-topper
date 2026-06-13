@@ -6,6 +6,7 @@ loadLocalEnv();
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_SEARCH = 120;
 const DEFAULT_RATE_LIMIT_MAX_ANSWER_SOURCE = 30;
+const DEFAULT_RATE_LIMIT_MAX_FEEDBACK = 5;
 const DEFAULT_RATE_LIMIT_MAX_PDF = 45;
 const DEFAULT_RATE_LIMIT_MAX_AUTH = 12;
 const DEFAULT_RATE_LIMIT_MAX_PROGRESS = 180;
@@ -47,6 +48,10 @@ export function getSearchRateLimitMax() {
 
 export function getAnswerSourceRateLimitMax() {
   return parsePositiveInteger(getEnv("RATE_LIMIT_ANSWER_SOURCE_MAX"), DEFAULT_RATE_LIMIT_MAX_ANSWER_SOURCE);
+}
+
+export function getFeedbackRateLimitMax() {
+  return parsePositiveInteger(getEnv("RATE_LIMIT_FEEDBACK_MAX"), DEFAULT_RATE_LIMIT_MAX_FEEDBACK);
 }
 
 export function getPdfRateLimitMax() {

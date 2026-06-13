@@ -3,68 +3,76 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
-Last updated: 2026-06-13 20:55 IST · By: Codex
+Last updated: 2026-06-13 09:40 IST · By: Codex
 
-## Option B surgical production rollout
+## Global feedback widget + Resend API handoff
 
-The user chose **Option B**: do not ship the whole 13-commit feature stack to production. I created a clean worktree from `origin/main` (`bf1faf0`), applied only the PDF/mobile/deploy-related fixes, committed them as `4bada07` (`Ship PDF mobile and preview deploy fixes`), and pushed that commit to `origin/main`.
+I implemented the requested feedback system on the clean production worktree `/Users/ankitkumar/Downloads/open-topper-option-b-main` (the same worktree already used for the surgical production fixes), so the repo changes are isolated from the unrelated dirty feature-stack worktree.
 
-### What changed
+### What I changed
 
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/PdfViewerPage.tsx`
-  - Mobile default zoom is now 60%; desktop default zoom is now 100%.
-  - Mobile PDF canvas sizing is constrained to the viewport width.
-  - Mobile hides the large PDF title/header panel and footer answer-id chrome.
-  - Mobile keeps page/status badges in the compact control bar.
-  - Viewer pane height is increased on mobile for less wasted vertical space.
-  - Added explicit Pages selector (`Auto`, `One page`, `Two page`) and keeps user-selected zoom from being overwritten by responsive layout changes.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/OfficialSubjectWorkspace.tsx`
-  - Desktop still opens PDFs in a new tab.
-  - Mobile now navigates the current tab to the viewer after the token is issued, avoiding unreliable blank popup behavior on mobile browsers.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/app/api/answer-source/route.ts`
-  - Added a separate lightweight rate limit for PDF-open/token-issuance requests (`RATE_LIMIT_ANSWER_SOURCE_MAX`, default 30/minute), without pulling in the broader cookie-token/security stack.
-  - Added `Allow: POST` on the route's GET 405 response.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/lib/env.ts`
-  - Added `getAnswerSourceRateLimitMax()` for the separate PDF-open limiter.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/scripts/sync-pdf-runtime-data.js`
-  - Upgraded runtime PDF data sync to validate committed runtime fallback data and R2 URLs before build.
-  - Treats Vercel preview (`VERCEL_ENV=preview` or `NEXT_PUBLIC_VERCEL_ENV=preview`) as non-production-like so preview deploys can validate the known default committed R2 host without production R2 env configuration.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/.env.example`
-  - Documented the PDF/deploy knobs: `PDF_TOKEN_SECRET`, `R2_ALLOWED_PUBLIC_HOSTS`, and `RATE_LIMIT_ANSWER_SOURCE_MAX`.
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/docs/ai-decisions.md`
-  - Recorded the separate PDF-open limiter and preview-vs-production R2 validation behavior.
+- Added a global floating feedback launcher mounted from the app shell:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/FeedbackWidget.tsx`
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/AppShell.tsx`
+- Added styling for a fixed bottom-left viewport launcher and calm modal form:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/app/globals.css`
+- Added a private multipart feedback route that validates message/email/screenshot, rate-limits submissions, enforces same-origin usage, and sends to `founder@upscat.click` through Resend when configured:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/app/api/feedback/route.ts`
+- Added feedback-specific env/config knobs and rate-limit helper:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/lib/env.ts`
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/.env.example`
+- Added focused regression tests for the new API route:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/lib/__tests__/feedback-route.test.ts`
+- Added the new dependency required by the plan:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/package.json`
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/package-lock.json`
+- Updated shared AI docs:
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/docs/ai-decisions.md`
+  - `/Users/ankitkumar/Downloads/open-topper-option-b-main/docs/ai-handoff.md`
 
-### What was intentionally NOT included
+### Product behavior implemented
 
-This Option B branch does **not** include the broader feature-stack changes such as OCR pipeline changes, official PYQ data rewrites, topper-name curation, optional PYQ parser changes, package audit/override changes, broad API/security hardening, or general product/data changes from `codex/release-hardening-ocr-2026-06-08`.
+- A `Feedback` button is always fixed to the bottom-left of the screen, not the page flow.
+- Clicking it opens an in-app modal with:
+  - required feedback textarea
+  - optional reply email field
+  - optional one-image screenshot upload (PNG/JPG/WebP/GIF)
+- Frontend shows loading, success, and inline validation/error states.
+- Backend accepts multipart form data and sends an email to `founder@upscat.click` through Resend.
+- If Resend is not configured, the API returns a clear `503` setup error instead of pretending the feedback was sent.
 
-### Verification
+### Verification completed
 
-All commands ran from `/Users/ankitkumar/Downloads/open-topper-option-b-main`:
+All commands ran from `/Users/ankitkumar/Downloads/open-topper-option-b-main`.
 
-- `node scripts/sync-pdf-runtime-data.js` → pass
 - `npm run lint -- --no-fix` → pass
 - `npx tsc --noEmit --pretty false` → pass
-- `node --test --import tsx src/lib/__tests__/*.test.ts` → pass (10/10)
+- `node --test --import tsx src/lib/__tests__/*.test.ts` → pass (**14/14**)
 - `npm run build` → pass
-- `git diff --check` → pass
+- local API smoke test → expected `503` with message `Feedback email is not configured yet. Please set RESEND_API_KEY.` when no Resend secret is present
+- local browser smoke test via in-app browser:
+  - launcher found
+  - launcher is `position: fixed`
+  - launcher sits at bottom-left (`left: 16`, `bottom gap: 16` in the local viewport)
+  - modal opens successfully
+  - textarea, optional email input, and file input are all present
 
-### Files changed by this pass
+### Important deployment note / blocker
 
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/.env.example`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/scripts/sync-pdf-runtime-data.js`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/app/api/answer-source/route.ts`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/OfficialSubjectWorkspace.tsx`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/components/PdfViewerPage.tsx`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/src/lib/env.ts`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/docs/ai-decisions.md`
-- `/Users/ankitkumar/Downloads/open-topper-option-b-main/docs/ai-handoff.md`
+The code is implementation-complete, but **live email sending is blocked by missing Vercel env config**, not by code.
 
-### Blockers
+I linked the local worktree to the real Vercel project and checked production envs:
 
-- None for this surgical rollout.
-- Note: `npm ci` in the clean worktree reports existing dependency audit advisories from `origin/main`; I did not apply the separate package-audit/override changes because they were outside Option B's requested PDF/deploy scope.
+- team: `utkarsh-s-projects19`
+- project: `open-topper`
+- production envs currently include R2/Auth values but **do not include**:
+  - `RESEND_API_KEY`
+  - `FEEDBACK_FROM_EMAIL`
+
+That means once this code is pushed, the feedback button UI can go live immediately, but actual submissions on production will return the clear setup error until the Resend secret is added in Vercel.
 
 ### Exact next step
 
-Monitor the production deployment for commit `4bada07`, especially mobile PDF open/viewer behavior and the PDF runtime-data sync step. Do not push the local accidental merge commit from the separate `main` worktree.
+- Push this feedback feature commit to `origin/main`.
+- Add `RESEND_API_KEY` in Vercel production envs (and optionally `FEEDBACK_FROM_EMAIL`; otherwise the code falls back to `UPSCat Feedback <onboarding@resend.dev>`).
+- After the env is added, redeploy or trigger a new production deploy and do one live submission from `https://www.upscat.click` to confirm the email reaches `founder@upscat.click`.
