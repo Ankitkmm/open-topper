@@ -25,9 +25,10 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Ensure data files are included (they're in public/data/)
-# If you have data outside public/, copy them explicitly:
-# COPY --from=builder /app/data ./data
+# Public static assets are copied above. App runtime JSON that is safe to ship
+# is bundled/traced by Next during the standalone build. Do not copy private
+# ignored roots such as local-pdfs/, extracted_data/, vault_merged_docs/, or
+# private data/app/* sources into this image.
 
 EXPOSE 3000
 

@@ -6,12 +6,11 @@ services:
     env_file:
       - .env.local
     restart: unless-stopped
-    # Mount local data volumes for persistence (optional)
-    # volumes:
-    #   - ./local-pdfs:/app/local-pdfs:ro
-    #   - ./public/data:/app/public/data:ro
+    # Local development may use .env.local. Do not mount private PDF/OCR
+    # corpora into production containers; PDF delivery should use hardened
+    # R2/S3 runtime data and the /api/answer-source flow.
 
-  # Optional: Nginx reverse proxy for production
+  # Optional: a reverse proxy can terminate TLS in self-hosted deployments.
   # nginx:
   #   image: nginx:alpine
   #   ports:
