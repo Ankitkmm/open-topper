@@ -3,6 +3,7 @@ import { ArrowRight, BookOpen, Search } from "lucide-react";
 import { StudyNav } from "@/components/StudyNav";
 import { getSubjectDefinition, getSubjectKeyFromValue } from "@/lib/subject-definitions";
 import type { SubjectPyqCard } from "@/lib/search-results";
+import { FeedbackWidget } from "@/components/FeedbackWidget";
 
 interface Props {
   questions: SubjectPyqCard[];
@@ -99,9 +100,9 @@ export function OfficialQuestionCards({
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <span className="study-badge study-badge-accent">{question.category}</span>
                     {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
-                    {question.marks && <span className="study-badge">{question.marks} marks</span>}
                     <span className="study-badge">{question.relevantQuestionCount} relevant answers</span>
                     <span className="study-badge">{question.topperCount} topper copies</span>
+                    <FeedbackWidget />
                   </div>
                   <h2 className="question-title text-lg leading-8 sm:text-xl">{question.question}</h2>
                   {question.syllabusTags[0] && <p className="mt-3 text-sm leading-7 text-secondary">{question.syllabusTags[0]}</p>}

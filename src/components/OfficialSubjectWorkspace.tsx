@@ -12,6 +12,7 @@ import type { WorkspaceSyllabusNode } from "@/lib/question-bank-runtime";
 import { normalizePublicTopperName } from "@/lib/public-records";
 import { makeProgressItemId, progressItemCandidates, type ProgressItemType } from "@/lib/progress-items";
 import type { SubjectKey } from "@/lib/subject-definitions";
+import { FeedbackWidget } from "@/components/FeedbackWidget";
 
 interface OfficialSubjectWorkspaceProps {
   subjectKey: SubjectKey;
@@ -424,13 +425,13 @@ export function OfficialSubjectWorkspace({
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <span className="study-badge">{question.paper}</span>
                           {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
-                          {question.marks && <span className="study-badge">{question.marks} marks</span>}
                           <span className="study-badge study-badge-accent">
                             {question.relevantQuestionCount} relevant {question.relevantQuestionCount === 1 ? "answer" : "answers"}
                           </span>
                           <span className="study-badge">
                             {question.topperCount} {question.topperCount === 1 ? "copy" : "copies"}
                           </span>
+                          <FeedbackWidget />
                         </div>
                         <h2 className="question-title text-lg leading-8 sm:text-xl">{question.question}</h2>
                         {question.syllabusTags[0] && (
@@ -563,7 +564,6 @@ function TopperCopyCard({
             {copy.rank && <span className="study-badge">AIR {copy.rank}</span>}
             {copy.year && <span className="study-badge">{copy.year}</span>}
             {copy.institute && <span className="study-badge">{copy.institute}</span>}
-            {copy.marks && <span className="study-badge">{copy.marks}</span>}
             {copy.pageHint && <span className="study-badge">Page {copy.pageHint}</span>}
           </div>
           {!copy.sourceAvailable && <p className="mt-2 text-xs text-muted">Source PDF is not available yet.</p>}

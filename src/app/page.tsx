@@ -6,6 +6,7 @@ import { SITE_NAME } from "@/lib/marketing";
 import { getBrowseStats, getFeaturedSubjectQuestion } from "@/lib/study-page-data";
 import { getSubjectDefinition, getSubjectDefinitions, type SubjectKey } from "@/lib/subject-definitions";
 import { normalizePublicTopperName } from "@/lib/public-records";
+import { FeedbackWidget } from "@/components/FeedbackWidget";
 
 export const metadata: Metadata = {
   title: `${SITE_NAME} | Semantic search for UPSC topper answers`,
@@ -130,8 +131,8 @@ export default async function LandingPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {featuredCard.estimatedYear && <span className="study-badge">{featuredCard.estimatedYear}</span>}
-              {featuredCard.marks && <span className="study-badge">{featuredCard.marks} marks</span>}
               <span className="study-badge study-badge-accent">{featuredCard.syllabusPath.at(-1)}</span>
+              <FeedbackWidget />
             </div>
 
             <h2 className="question-title mt-4 max-w-3xl text-2xl leading-relaxed sm:text-[1.7rem]">
