@@ -3,6 +3,29 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
+Last updated: 2026-06-13 20:45 IST · By: Codex
+
+## Production hotfix: Safari PDF.js compatibility
+
+### Summary
+
+Applied the emergency PDF viewer compatibility fix onto a clean `origin/main` worktree for production deployment to `upscat.click`.
+
+### What changed
+
+- `/Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx` now imports `pdfjs-dist/legacy/build/pdf.mjs` and uses `pdfjs-dist/legacy/build/pdf.worker.min.mjs`.
+- Rationale: the standard `pdfjs-dist@6` browser build calls static `URL.parse()`, which caused user-reported Safari/browser failures (`URL.parse is not a function`). The legacy build preserves PDF.js compatibility without changing the secure answer-token/PDF proxy flow.
+
+### Verification
+
+- To be run from clean hotfix worktree before push/deploy: `npm run typecheck`, `npm run lint -- --no-fix`, `npm test`, `npm run build`.
+
+### Exact next step
+
+Push this hotfix to `main`/production and verify the live `View PDF` button flow on `https://upscat.click`, especially iPhone Safari.
+
+---
+
 Last updated: 2026-06-13 09:40 IST · By: Codex
 
 ## Global feedback widget + Resend API handoff

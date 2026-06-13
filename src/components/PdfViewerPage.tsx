@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizePublicTopperName } from "@/lib/public-records";
 
-type PdfModule = typeof import("pdfjs-dist");
+type PdfModule = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
 type LoadedPdfDocument = Awaited<ReturnType<PdfModule["getDocument"]>["promise"]>;
 
 type PdfPageMode = "auto" | "single" | "spread";
@@ -267,8 +267,8 @@ export function PdfViewerPage({
       spreadRefs.current.clear();
 
       try {
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
         loadingTask = pdfjs.getDocument({ url: sourceUrl, withCredentials: false });
         const pdf = await loadingTask.promise;
         if (cancelled) {
