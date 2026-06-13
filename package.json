@@ -26,8 +26,10 @@
     "import-upsckata": "tsx scripts/import-upsckata.ts",
     "filter-broken-pdfs": "tsx scripts/filter-broken-pdf-links.ts",
     "check:no-public-leaks": "node scripts/check-no-public-pdf-url-leaks.js",
+    "check-function-sizes": "node scripts/check-function-sizes.js",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "node --test --import tsx src/lib/__tests__/*.test.ts",
+    "smoke": "node scripts/smoke-test.js",
     "verify": "npm run lint && npm run typecheck && npm run test && node scripts/check-no-public-pdf-url-leaks.js && npm run build"
   },
   "dependencies": {
@@ -46,8 +48,7 @@
     "pg": "^8.21.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "tailwind-merge": "^3.6.0",
-    "xlsx": "^0.18.5"
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -58,6 +59,13 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
+    "xlsx": "^0.18.5",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.15",
+    "onnxruntime-web": "1.26.0",
+    "onnx-proto": "8.0.1",
+    "protobufjs": "8.6.3"
   }
 }
