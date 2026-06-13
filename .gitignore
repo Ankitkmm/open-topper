@@ -104,3 +104,8 @@ __pycache__/
 /*.xls
 /*.xlsm
 /*.csv
+
+
+# Graphify knowledge graph output (local only)
+graphify-out/
+**/graphify-out/
