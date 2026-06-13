@@ -3,6 +3,342 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
+Last updated: 2026-06-14 02:30 IST · By: Kiro
+
+## Migration Prep Audit Complete
+
+### Summary
+
+Created `docs/migration-execution-checklist.md` — a strict, release-captain-ready execution doc for both Cloudflare Workers/Pages and Supabase Mumbai migrations. No app code changed. Docs-only pass.
+
+### Deliverable
+
+`docs/migration-execution-checklist.md` contains:
+- Cloudflare blocker audit (9 fs files, 6 process.cwd files, 3 crypto files, 2 pg files, 1 hard-blocked dep)
+- Route portability assessment (safe vs blocked)
+- Database coupling map (hard vs soft deps)
+- 5-phase Cloudflare migration checklist
+- Supabase Mumbai readiness audit (env vars, migrations, dependencies, rollback)
+- Supabase execution steps (pre-migration → canary → cutover → monitoring)
+- Effort summary table
+- 4 decisions requiring release captain approval
+
+### Key findings
+
+1. **Supabase Mumbai is ready to execute now.** Only needs: new project creation, apply 2 migrations, swap 4 env vars. Instant rollback. Public browsing unaffected.
+2. **Cloudflare migration requires ~8 days of code changes** before it's viable. The 9-file `fs` refactoring is the biggest single item.
+3. **Rate limiting gracefully degrades** — it falls back to in-memory when `DATABASE_URL` is absent. Only `/api/feedback` has a hard DB dependency.
+4. **`@xenova/transformers` is already safely gated** — no action needed as long as `ENABLE_LOCAL_EMBEDDINGS=false`.
+
+### Verification
+
+- No code changes — docs only — no lint/typecheck needed
+
+### Blockers
+
+- None for this docs pass
+
+### Exact next step
+
+Release captain reviews `docs/migration-execution-checklist.md` and decides:
+1. Execute Supabase Mumbai migration (low risk, high value)?
+2. Approve Cloudflare Phase 1 (add `wrangler.toml`)?
+3. Approve `@neondatabase/serverless` for pg replacement?
+
+---
+
+### Overview
+
+This section covers all remaining modified/untracked files outside the feedback lane. Grouped by safe-to-stage commit, with blockers and never-stage paths clearly identified.
+
+---
+
+### Commit 1: Docs / Ops (safe, no code)
+
+```bash
+git add \
+  docs/deployment-runbook.md \
+  docs/ai-operations.md \
+  docs/reconciliation-table.md \
+  docs/auth-progress-audit.md \
+  docs/supabase-mumbai-migration.md \
+  docs/pdf-delivery-strategy.md \
+  docs/cloudflare-migration.md \
+  docs/cloudflare-audit-findings.md \
+  docs/ai-decisions.md \
+  docs/ai-handoff.md \
+  docs/kiro-next-task.md \
+  docs/ai-mailbox.md \
+  docs/kiro-orchestrator-playbook.md
+```
+
+### Commit 2: CI Pipeline (safe, no code)
+
+```bash
+git add .github/workflows/ci.yml
+```
+
+### Commit 3: Operational Scripts (safe, no app code)
+
+```bash
+git add \
+  scripts/smoke-test.js \
+  scripts/check-function-sizes.js \
+  scripts/reconcile-branch.sh \
+  scripts/verify-cherry-picks.sh \
+  scripts/admin-feedback-queries.sql
+```
+
+### Commit 4: Tooling / Config (safe, low-risk)
+
+```bash
+git add \
+  CLAUDE.md \
+  .gitignore \
+  eslint.config.mjs
+```
+
+### Commit 5: Progress Queue (safe, new file)
+
+```bash
+git add src/lib/progress-queue.ts
+```
+
+### Commit 6: Marks Badge Removal (safe, pure deletion)
+
+```bash
+git add \
+  src/components/QuestionCards.tsx \
+  src/components/SubjectWorkspace.tsx
+```
+
+These are single-line deletions of `{question.marks && ...}` and `{copy.marks && ...}` badge rendering. No logic changes.
+
+### Commit 7: package.json + package-lock.json (review needed)
+
+```bash
+git add package.json package-lock.json
+```
+
+**Note:** `package.json` has added scripts (`smoke`, `check-function-sizes`) plus dependency changes from the security audit (overrides, xlsx moved to devDeps). `package-lock.json` has large churn from those changes. Review diff before staging.
+
+### Commit 8: About page edge POC (review — may want to revert)
+
+```bash
+git add src/app/about/page.tsx
+```
+
+**Note:** Adds `export const runtime = "edge"` as a Cloudflare proof-of-concept. This makes the page dynamic instead of static-generated. The code has a `// TODO: remove before production` comment. Release captain should decide: keep for testing or revert.
+
+---
+
+### NEEDS REVIEW / DO NOT AUTO-STAGE
+
+| File/Area | Issue | Recommendation |
+|-----------|-------|---------------|
+| `data/app/public-official-pyq-links.json` | **1.1 million line diff** (761K insertions). Must be verified with `npm run build-pyqs` producing identical output. | Only stage after deterministic rebuild verification |
+| `data/app/answer-sources.json` | 2-line change but is a **private mapping file** listed in security steering as never-public | **Do NOT stage** — gitignored/private |
+| `data/app/public-pyqs.json` | 2-line change | Verify with rebuild; safe if rebuild matches |
+| `data/app/topper-answer-canonical.json` | 2-line change | Verify with rebuild; safe if rebuild matches |
+| `data/pdf-runtime/answer-sources.json` | Private runtime data | **Do NOT stage** — private path |
+| `data/curation/topper-name-overrides.json` | 100 lines, new file | Review — curated data, likely safe but not verified |
+| `PYQS/UPSC ESSAYS PYQS.md` | 516-line reorganization (theme headings reworded) | Review — data quality lane, needs `build-pyqs` verification |
+| `src/lib/official-pyqs.ts` | 783 lines added (optional PYQ pipeline) | **Large change** — review carefully, run tests |
+| `scripts/build-official-pyq-links.ts` | 372-line diff (essay scoring changes) | Review alongside official-pyqs.ts |
+| `src/lib/__tests__/official-pyqs-boundaries.test.ts` | 228 lines, new test | Safe if tests pass |
+| `src/lib/__tests__/optional-pyq-parsing.test.ts` | New test file (untracked) | Safe if tests pass |
+| `PYQS/optional/` | 6 new optional source files | Data quality review needed |
+| `Dockerfile` / `docker-compose.yml` / `README.md` | Infrastructure changes | Review — not urgent |
+| `scripts/ai/` | Agent helper scripts | Review — may not be needed in repo |
+| `src/components/PdfViewerPage.tsx` | Modified vs local HEAD but **identical to origin/main** | **Do NOT stage** — already on production, local diff is branch-noise |
+
+---
+
+### NEVER STAGE (dangerous/private/junk)
+
+```
+new/
+untitled folder/
+optional scraping.md/
+scrap_essay.md/
+sociology.md/
+how does one do this, Based on the video transcript, the cre….md
+transit_station_collector.py
+docs/.kiro-next-task.md.swp
+data/app/answer-sources.json
+data/pdf-runtime/answer-sources.json
+```
+
+---
+
+### Blockers
+
+1. **Large data diff** (`public-official-pyq-links.json`): Cannot stage safely without running `npm run build-pyqs` on a clean baseline and confirming the output matches. This is a 1.1M-line file.
+2. **PYQ pipeline changes** (`official-pyqs.ts`, `build-official-pyq-links.ts`, `PYQS/` files): These are substantial and interdependent. Should be staged together as one "data quality" commit only after pipeline verification passes end-to-end.
+3. **About page edge annotation**: Release captain must decide if the `export const runtime = "edge"` POC belongs in production or should be reverted.
+
+### Safe immediately (no review needed)
+
+Commits 1–6 above can be staged right now with zero risk. They are docs, scripts, config, and pure UI deletions. All verified with lint/typecheck/test/build passing.
+
+### Exact next step
+
+Release captain stages Commits 1–6 immediately. Then decides on Commits 7–8 and the data/PYQ lane after review.
+
+---
+
+## Feedback Lane — RELEASE-READY (strict verification, 2026-06-14 01:45 IST)
+
+### Status: ✅ Complete and verified
+
+Schema: `{ page_path, category, message }`. Old fields gone. Build passes. Migration is canonical.
+
+**Stage command:**
+```bash
+git add \
+  src/components/FeedbackWidget.tsx \
+  src/lib/feedback.ts \
+  src/app/api/feedback/route.ts \
+  src/components/OfficialQuestionCards.tsx \
+  src/components/OfficialSubjectWorkspace.tsx \
+  src/app/page.tsx \
+  supabase/migrations/20260615_feedback.sql
+
+git commit -m "feat: align feedback schema end-to-end (page_path/category/message)"
+```
+
+Apply `supabase/migrations/20260615_feedback.sql` to production Supabase before or after deploy.
+
+---
+
+## Prior session context (30-Day Maintenance Plan — all phases complete)
+
+All 5 phases of the 30-day maintenance plan were completed in the same session. Summary of other lanes (non-feedback):
+
+**Phase 0 — Reconciliation:** `scripts/reconcile-branch.sh`, `docs/reconciliation-table.md`
+**Phase 1 — Production Reliability:** `scripts/smoke-test.js`, `scripts/check-function-sizes.js`, `docs/deployment-runbook.md`
+**Phase 2 — Data Quality:** PYQ pipeline validated, `scripts/admin-feedback-queries.sql`
+**Phase 3 — Auth & Supabase Region:** `docs/auth-progress-audit.md`, `docs/supabase-mumbai-migration.md`, `src/lib/progress-queue.ts`
+**Phase 4 — Platform Migration Prep:** `docs/pdf-delivery-strategy.md`, `docs/cloudflare-migration.md`, `.github/workflows/ci.yml`, `docs/ai-operations.md`
+**Tooling:** `CLAUDE.md`, `.gitignore`, Graphify installed
+
+Decisions from that session:
+- Feedback API uses `queryDb()` (raw pg) — matches existing codebase patterns
+- Progress queue caps at 1000 entries, 3 retries per item
+- CI uses placeholder Supabase env vars for build
+- Cloudflare migration: ~8-10 person-days, recommend Worker+Origin first
+- PDF delivery: keep current proxy for now
+- Graphify output is local-only (gitignored)
+
+Non-feedback blockers:
+- Graphify LLM-enhanced pass (community naming) needs Claude API key via Claude Code session
+- Other lanes (scripts, docs, CI, progress queue) need their own focused commits by the release captain
+
+---
+
+Last updated: 2026-06-13 20:25 IST · By: Codex
+
+## Emergency swarm: scale posture + Safari PDF load fix
+
+### Summary
+
+The user reported sudden growth (~5,000 DAU, mostly India) plus user screenshots showing PDF failures. I ran a fast multi-agent swarm for ops/scaling/Supabase/AI-maintenance analysis and implemented the immediate user-visible PDF compatibility fix locally.
+
+### What changed
+
+- `/Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx`
+  - Switched the client PDF import from `pdfjs-dist` to `pdfjs-dist/legacy/build/pdf.mjs`.
+  - Switched the worker URL from `pdfjs-dist/build/pdf.worker.min.mjs` to `pdfjs-dist/legacy/build/pdf.worker.min.mjs`.
+  - Rationale: `pdfjs-dist@6.0.227` standard browser build calls the new static `URL.parse()` API. The screenshot error (`URL.parse is not a function`) matches Safari/browser environments without that API. The legacy pdf.js build includes the needed compatibility/polyfill path while preserving the current custom viewer flow.
+
+### Verification
+
+- `npm run typecheck` → pass
+- `npm run lint -- --no-fix` → pass
+- `npm test` → pass (42 tests)
+- `npm run build` → pass
+- Build leak checks before and after build → pass
+
+### Swarm findings / operational decisions
+
+- Treat `/pdf/*`, `/api/answer-source*`, and `/api/search` as the hottest/safest-critical paths.
+- Do not run future swarm edits in one dirty checkout; use lane-specific worktrees with one release captain.
+- Vercel Hobby is now risky mainly because PDF proxying and API calls can burn function invocations and data transfer quickly.
+- Supabase Tokyo is not the immediate bottleneck while auth/progress are mostly gated/QA-disabled, but if progress/auth becomes central for Indian users, use Supabase Mumbai (`ap-south-1`) for a new production project/migration.
+- Cloudflare migration remains a good 7–30 day direction, but not before the live PDF/search path is boring; current blockers are runtime `fs`, Node `pg`, and crypto assumptions documented in `docs/cloudflare-migration.md`.
+
+### Files changed by Codex in this pass
+
+- `/Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx`
+- `/Users/ankitkumar/Downloads/open-topper/docs/ai-handoff.md`
+- `/Users/ankitkumar/Downloads/open-topper/docs/ai-decisions.md`
+
+Note: `npm run build` also ran `scripts/sync-pdf-runtime-data.js`; inspect existing modified `data/pdf-runtime/*` before staging because the worktree already had many unrelated edits.
+
+### Blockers / caveats
+
+- I could not perform a real browser PDF open smoke from the production UI here because valid short-lived PDF cookies require the in-app button flow on a running deployed/dev server.
+- The current worktree has many pre-existing modified/untracked files from other sessions; do not use `git add .`.
+- Three exploratory agents were still running slowly after the urgent patch/build completed; they were shut down to avoid wasting time. The AI-maintenance agent completed and its findings were incorporated into the user-facing plan.
+
+### Exact next step
+
+Stage only the emergency PDF fix plus the coordination docs if desired:
+
+```bash
+git add /Users/ankitkumar/Downloads/open-topper/src/components/PdfViewerPage.tsx
+git add /Users/ankitkumar/Downloads/open-topper/docs/ai-handoff.md
+git add /Users/ankitkumar/Downloads/open-topper/docs/ai-decisions.md
+git status --short
+```
+
+Then deploy this patch quickly and ask affected Safari/iPhone users to retry PDF opening through the app's `View PDF` button flow.
+
+---
+
+Last updated: 2025-07-05 (session 3) · By: Kiro
+
+## Essay Matching Relaxed + Themes Reworded
+
+### Summary
+
+Relaxed essay matching thresholds so topper cards link to official PYQs based on thematic relevance (not just exact match). Reworded essay theme headings. History fix from previous session remains intact.
+
+### Changes
+
+- `PYQS/UPSC ESSAYS PYQS.md` — Reorganized with 27 reworded theme headings (derived from scraped upscpath data but not identical)
+- `scripts/build-official-pyq-links.ts`:
+  - `classifyEssayScore()` — Added "loose-topic-match" tier, lowered "topic-match" thresholds
+  - `scoreEssayCandidates()` filter — Simplified to pass any candidate with 1+ shared token or theme overlap ≥ 0.20
+- `data/app/public-official-pyq-links.json` — Regenerated
+
+### Results
+
+| Subject | PYQs | Linked | Coverage |
+|---------|------|--------|----------|
+| Geography | 128 | 124 | 97% |
+| Anthropology | 85 | 83 | 98% |
+| Sociology | 126 | 115 | 91% |
+| Public Admin | 126 | 113 | 90% |
+| PSIR | 78 | 72 | 92% |
+| History | 110 | 75 | 68% |
+| Essay | 100 | 39 | 39% |
+| GS 1-4 | ~838 | ~838 | ~100% |
+| **Total** | **1,577** | **1,459** | **92%** |
+
+### Blockers
+
+- Essay coverage limited by topper card data (217 cards, many are OCR fragments or pre-2013 questions not in official file). All 248 essay copies have `sourceAvailable: false` (PDFs on external CDNs, not in R2).
+- To improve essay: scrape upscpath.com/logos/pyq/{1-96} for actual topper PDF links, or mount Acer drive and use OCR'd essay PDFs from local-pdfs.
+
+### Exact next step
+
+- Scrape essay topper data from upscpath links (or mount Acer drive for OCR data)
+- Upload essay PDFs to R2 so `sourceAvailable` becomes true
+- Consider ingesting the optional scrape links (lotusarise.com) for PSIR, anthropology, geography, history, pub-admin to get more complete optional PYQ data
+
+---
+
 Last updated: 2026-06-13 19:45 IST · By: Codex
 
 ## Minimal mobile PDF chrome cleanup handoff
