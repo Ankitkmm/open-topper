@@ -1,12 +1,15 @@
-import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { getDatabaseUrl, hasDatabaseUrl } from "./env";
 
-let pool: Pool | null = null;
+type PgPool = import("pg").Pool;
 
-export function getDbPool() {
+let pool: PgPool | null = null;
+
+export async function getDbPool() {
   if (!hasDatabaseUrl()) return null;
   if (pool) return pool;
 
+  const { Pool } = await import("pg");
   pool = new Pool({
     connectionString: getDatabaseUrl(),
     max: 8,
@@ -18,7 +21,7 @@ export function getDbPool() {
 }
 
 export async function withDb<T>(fn: (client: PoolClient) => Promise<T>) {
-  const current = getDbPool();
+  const current = await getDbPool();
   if (!current) throw new Error("DATABASE_URL is not configured.");
 
   const client = await current.connect();

@@ -13,6 +13,9 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "scripts/**",
+    ".open-next/**",
+    ".cloudflare-runtime-data/**",
+    ".wrangler/**",
     // Local Codex skill/cache folders occasionally appear as untracked
     // root-level scratch copies. They are not app source and may contain
     // CommonJS utility scripts that should not affect repository lint.

@@ -3,6 +3,73 @@
 > The single most important file. The next agent (any tool) continues from here.
 > Overwrite the sections below after each meaningful chunk of work.
 
+Last updated: 2026-06-14 02:05 IST · By: Codex
+
+## Cloudflare/OpenNext baseline implemented
+
+### Summary
+
+Implemented the repo-side fast Cloudflare migration baseline while keeping Vercel/local behavior intact. OpenNext Worker build now succeeds locally. Supabase Mumbai itself still requires the user-created external project/env vars.
+
+### What changed
+
+- Added Cloudflare/OpenNext tooling:
+  - `open-next.config.ts`
+  - `wrangler.jsonc`
+  - `scripts/cloudflare/prepare-runtime-data.js`
+  - `scripts/cloudflare/upload-runtime-data.sh`
+  - npm scripts: `cf:prepare-data`, `cf:upload-data:preview`, `cf:upload-data:prod`, `cf:build`, `cf:preview`, `cf:deploy`
+- Added private R2 runtime-data flow:
+  - `.cloudflare-runtime-data/` generation is ignored and verified.
+  - Current generated runtime data: public-pyqs 15 shards, public-official links 14 shards, workspace-index 24 shards, topper canonical 22 shards, answer-sources 1 object, pdf-r2-map 1 object.
+- Migrated PDF answer-source path to async runtime-data loading with R2 binding `UPSCAT_RUNTIME_DATA` and local file fallback.
+- Migrated feedback writes away from direct `pg`; `/api/feedback` now uses Supabase HTTP client/RLS via `src/lib/feedback-store.ts`.
+- Made direct Postgres runtime safer for Cloudflare:
+  - `src/lib/db.ts` lazy-loads `pg`.
+  - `src/lib/rate-limit.ts` lazy-loads DB and falls back to memory on Cloudflare.
+  - `cf:build` blanks `DATABASE_URL` so direct Postgres is not bundled into Worker runtime.
+  - `open-next.config.ts` disables the `workerd` package condition to avoid `pg-cloudflare` optional socket bundling.
+- Replaced `src/proxy.ts` with `src/middleware.ts` as an OpenNext compatibility exception. Next 16 warns that middleware is deprecated in favor of proxy, but OpenNext rejects Node proxy output currently.
+- Removed `/about` edge runtime probe; `/about` is static again.
+- Updated migration docs/runbook/decisions to the current OpenNext + R2 approach.
+
+### Verification
+
+- `npm run lint -- --no-fix` → pass
+- `npm run typecheck` → pass
+- `npm test` → pass (42 tests)
+- `npm run build` → pass; expected warning: `middleware` file convention deprecated in Next 16
+- `npm run cf:prepare-data` → pass
+- `npm run cf:build` → pass; generated `.open-next/worker.js`
+- `npm audit --omit=dev` → 0 vulnerabilities
+- Full dev audit still reports known dev-only high advisories from `xlsx` and OpenNext/Wrangler/esbuild, with no non-breaking upstream fix.
+
+### Remaining blockers
+
+1. **External Cloudflare setup:** create R2 buckets and authenticate Wrangler/API token; then upload runtime data and run preview with real bindings.
+2. **External Supabase setup:** create fresh Mumbai (`ap-south-1`) project, apply `20260605_user_progress.sql` + `20260615_feedback.sql`, set deployment env vars.
+3. **Search/data full Worker migration:** `/api/search`, official/workspace detail APIs, and subject page loaders still rely on sync `fs` modules (`official-pyqs.ts`, `question-bank-runtime.ts`, etc.). OpenNext build succeeds, but full runtime correctness on Cloudflare preview requires converting those to async R2 runtime-data shards.
+4. **Middleware/proxy tradeoff:** Keep `src/middleware.ts` for OpenNext until OpenNext supports Next 16 Node proxy output; do not blindly convert it back to `proxy.ts` unless Cloudflare build is re-tested.
+
+### Exact next step
+
+Create the Cloudflare R2 buckets from `docs/cloudflare-opennext-runbook.md`, then run:
+
+```bash
+npm run cf:prepare-data
+npm run cf:upload-data:preview
+npm run cf:preview
+```
+
+Separately create the Supabase Mumbai project and provide the new public URL/key for deployment env updates.
+
+---
+
+# Latest handoff
+
+> The single most important file. The next agent (any tool) continues from here.
+> Overwrite the sections below after each meaningful chunk of work.
+
 Last updated: 2026-06-14 01:14 IST · By: Codex
 
 ## Release cleanup + migration prep commits complete

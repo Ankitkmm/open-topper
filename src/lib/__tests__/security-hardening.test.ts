@@ -95,6 +95,10 @@ function makeUnsignedJwt(payload: unknown) {
   ].join(".");
 }
 
+async function withEnvAsync<T>(patch: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>, run: () => Promise<T>) {
+  return withEnv(patch, run);
+}
+
 test("production secrets fail closed when missing or weak", () => {
   withEnv({
     NODE_ENV: "production",
@@ -313,13 +317,13 @@ test("PDF access token cookie uses hardened browser flags", () => {
   });
 });
 
-test("PDF embed URLs no longer expose the access token in the address", () => {
-  withEnv({
+test("PDF embed URLs no longer expose the access token in the address", async () => {
+  await withEnvAsync({
     NODE_ENV: "production",
     AUTH_SECRET: LONG_AUTH_SECRET,
     PDF_TOKEN_SECRET: LONG_PDF_SECRET,
-  }, () => {
-    const response = buildPdfEmbedResponse(VALID_ANSWER_ID);
+  }, async () => {
+    const response = await buildPdfEmbedResponse(VALID_ANSWER_ID);
     assert.equal(response.ok, true);
     if (!response.ok) return;
 

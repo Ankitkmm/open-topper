@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const sessionError = await requireSessionResponseIfConfigured();
   if (sessionError) return sessionError;
 
-  const payload = buildPdfEmbedResponse(answerId);
+  const payload = await buildPdfEmbedResponse(answerId);
   if (!payload.ok) {
     return Response.json({ error: payload.error }, { status: payload.status, headers: ANSWER_SOURCE_HEADERS });
   }

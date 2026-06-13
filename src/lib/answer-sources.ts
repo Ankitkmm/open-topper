@@ -1,7 +1,6 @@
-import { readFileSync } from "fs";
-import { join } from "path";
 import type { NextRequest } from "next/server";
 import { getR2AllowedPublicHosts, getR2PublicUrl, isProductionLikeRuntime } from "./env";
+import { loadRuntimeJson } from "./runtime-data";
 
 export interface AnswerSourceRecord {
   url: string;
@@ -43,14 +42,14 @@ export type ResolvedAnswerSourceResult =
     error: string;
   };
 
-const PDF_RUNTIME_DIR = join(process.cwd(), "data", "pdf-runtime");
-const ANSWER_SOURCES_FILE = join(PDF_RUNTIME_DIR, "answer-sources.json");
-const PDF_R2_MAP_FILE = join(PDF_RUNTIME_DIR, "pdf-r2-map.json");
+const ANSWER_SOURCES_FILE = "data/pdf-runtime/answer-sources.json";
+const PDF_R2_MAP_FILE = "data/pdf-runtime/pdf-r2-map.json";
 const PDF_RUNTIME_DATA_ERROR = "PDF source dataset is unavailable on the server.";
 
 let cachedSources: RuntimeDataResult<AnswerSourceDataset> | null = null;
 let cachedR2Map: RuntimeDataResult<Record<string, string>> | null = null;
-const loggedRuntimeDataFailures = new Set<string>();
+let cachedSourcesAsync: Promise<RuntimeDataResult<AnswerSourceDataset>> | null = null;
+let cachedR2MapAsync: Promise<RuntimeDataResult<Record<string, string>>> | null = null;
 
 export const ANSWER_SOURCE_HEADERS = {
   "Cache-Control": "private, no-store",
@@ -69,6 +68,25 @@ export function getResolvedAnswerSource(answerId: string) {
   if (!record) return { ok: false as const, kind: "missing" };
 
   const sourceUrl = resolvePublishedUrl(record.url || "");
+  if (!sourceUrl.ok) return sourceUrl;
+  if (!sourceUrl.value) return { ok: false as const, kind: "missing" };
+
+  return {
+    ok: true as const,
+    record,
+    sourceUrl: sourceUrl.value,
+    page: Math.max(1, Math.floor(Number(record.page) || 1)),
+  };
+}
+
+export async function getResolvedAnswerSourceAsync(answerId: string) {
+  const sources = await loadAnswerSourcesAsync();
+  if (!sources.ok) return { ok: false as const, kind: "runtime", error: sources.error };
+
+  const record = sources.value.sources[answerId];
+  if (!record) return { ok: false as const, kind: "missing" };
+
+  const sourceUrl = await resolvePublishedUrlAsync(record.url || "");
   if (!sourceUrl.ok) return sourceUrl;
   if (!sourceUrl.value) return { ok: false as const, kind: "missing" };
 
@@ -118,14 +136,32 @@ export function contentDispositionFilename(record: AnswerSourceRecord, answerId?
 
 function loadAnswerSources() {
   if (cachedSources) return cachedSources;
-  cachedSources = loadRuntimeJson<AnswerSourceDataset>(ANSWER_SOURCES_FILE, "answer-sources");
+  cachedSources = loadRuntimeJsonSync<AnswerSourceDataset>(ANSWER_SOURCES_FILE, "answer-sources");
   return cachedSources;
 }
 
 function loadR2Map() {
   if (cachedR2Map) return cachedR2Map;
-  cachedR2Map = loadRuntimeJson<Record<string, string>>(PDF_R2_MAP_FILE, "pdf-r2-map");
+  cachedR2Map = loadRuntimeJsonSync<Record<string, string>>(PDF_R2_MAP_FILE, "pdf-r2-map");
   return cachedR2Map;
+}
+
+async function loadAnswerSourcesAsync() {
+  cachedSourcesAsync ??= loadRuntimeJson<AnswerSourceDataset>({
+    key: "answer-sources/answer-sources.json",
+    localPath: ANSWER_SOURCES_FILE,
+    label: "answer-sources",
+  });
+  return cachedSourcesAsync;
+}
+
+async function loadR2MapAsync() {
+  cachedR2MapAsync ??= loadRuntimeJson<Record<string, string>>({
+    key: "pdf-r2-map/pdf-r2-map.json",
+    localPath: PDF_R2_MAP_FILE,
+    label: "pdf-r2-map",
+  });
+  return cachedR2MapAsync;
 }
 
 function resolvePublishedUrl(rawUrl: string) {
@@ -139,6 +175,23 @@ function resolvePublishedUrl(rawUrl: string) {
   if (!driveId || !isPlausibleDriveId(driveId)) return { ok: true as const, value: null };
 
   const r2Map = loadR2Map();
+  if (!r2Map.ok) return { ok: false as const, kind: "runtime", error: r2Map.error };
+
+  const mapped = r2Map.value[driveId];
+  return { ok: true as const, value: mapped ? normalizeAllowedR2PdfUrl(mapped) : null };
+}
+
+async function resolvePublishedUrlAsync(rawUrl: string) {
+  const url = String(rawUrl || "").trim();
+  if (!url) return { ok: true as const, value: null };
+  const directR2 = normalizeAllowedR2PdfUrl(url);
+  if (directR2) return { ok: true as const, value: directR2 };
+
+  const driveId = url.match(/drive\.google\.com\/file\/d\/([^/?#]+)/)?.[1]
+    || url.match(/\/drive_([^/?#]+?)\.pdf(?:[?#]|$)/)?.[1];
+  if (!driveId || !isPlausibleDriveId(driveId)) return { ok: true as const, value: null };
+
+  const r2Map = await loadR2MapAsync();
   if (!r2Map.ok) return { ok: false as const, kind: "runtime", error: r2Map.error };
 
   const mapped = r2Map.value[driveId];
@@ -201,18 +254,14 @@ function isPlausibleDriveId(driveId: string) {
   return /^[A-Za-z0-9_-]{10,200}$/.test(driveId);
 }
 
-function loadRuntimeJson<T>(file: string, label: string): RuntimeDataResult<T> {
+function loadRuntimeJsonSync<T>(file: string, label: string): RuntimeDataResult<T> {
   try {
+    // Legacy synchronous path for tests and Node-only call sites. Cloudflare routes use the async R2-capable loader above.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
     return { ok: true, value: JSON.parse(readFileSync(file, "utf-8")) as T };
   } catch (error) {
-    logRuntimeDataFailure(label, file, error);
+    console.error(`[pdf-runtime] Failed to load ${label} from ${file}`, error);
     return { ok: false, error: PDF_RUNTIME_DATA_ERROR };
   }
-}
-
-function logRuntimeDataFailure(label: string, file: string, error: unknown) {
-  const key = `${label}:${file}`;
-  if (loggedRuntimeDataFailures.has(key)) return;
-  loggedRuntimeDataFailures.add(key);
-  console.error(`[pdf-runtime] Failed to load ${label} from ${file}`, error);
 }

@@ -30,7 +30,14 @@
     "typecheck": "tsc --noEmit --pretty false",
     "test": "node --test --import tsx src/lib/__tests__/*.test.ts",
     "smoke": "node scripts/smoke-test.js",
-    "verify": "npm run lint && npm run typecheck && npm run test && node scripts/check-no-public-pdf-url-leaks.js && npm run build"
+    "verify": "npm run lint && npm run typecheck && npm run test && node scripts/check-no-public-pdf-url-leaks.js && npm run build",
+    "cf:prepare-data": "node scripts/cloudflare/prepare-runtime-data.js",
+    "cf:build": "npm run sync-pdf-runtime && npm run cf:prepare-data && DATABASE_URL= opennextjs-cloudflare build",
+    "cf:preview": "npm run cf:build && wrangler dev",
+    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:upload-data": "bash scripts/cloudflare/upload-runtime-data.sh",
+    "cf:upload-data:preview": "UPSCAT_RUNTIME_DATA_TARGET=preview bash scripts/cloudflare/upload-runtime-data.sh",
+    "cf:upload-data:prod": "UPSCAT_RUNTIME_DATA_TARGET=production bash scripts/cloudflare/upload-runtime-data.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
@@ -46,11 +53,13 @@
     "next": "^16.2.6",
     "pdfjs-dist": "^6.0.227",
     "pg": "^8.21.0",
+    "pg-cloudflare": "^1.4.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.19.11",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -59,8 +68,9 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "tsx": "^4.22.3",
-    "xlsx": "^0.18.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.100.0",
+    "xlsx": "^0.18.5"
   },
   "overrides": {
     "postcss": "8.5.15",

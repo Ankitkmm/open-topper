@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { queryDb } from "@/lib/db";
-import { hasDatabaseUrl } from "@/lib/env";
 import { validateFeedbackPayload } from "@/lib/feedback";
+import { insertFeedback } from "@/lib/feedback-store";
 
 // --- In-memory rate limiting: 5 requests per minute per IP ---
 
@@ -74,32 +73,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // 4. Check database availability
-  if (!hasDatabaseUrl()) {
+  // 4. Insert through Supabase HTTP client.
+  // Table is created by supabase/migrations/20260615_feedback.sql.
+  const insertResult = await insertFeedback(result.data);
+  if (!insertResult.ok) {
+    if (insertResult.reason !== "unconfigured") {
+      console.error("[feedback] Failed to save feedback", insertResult.message);
+    }
     return NextResponse.json(
       { error: "Failed to save feedback" },
       { status: 500, headers: RESPONSE_HEADERS },
     );
   }
 
-  // 5. Insert into database
-  // Table is created by supabase/migrations/20260615_feedback.sql
-  try {
-    const { page_path, category, message } = result.data;
-
-    await queryDb(
-      `INSERT INTO public.feedback (page_path, category, message)
-       VALUES ($1, $2, $3)`,
-      [page_path, category, message],
-    );
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to save feedback" },
-      { status: 500, headers: RESPONSE_HEADERS },
-    );
-  }
-
-  // 6. Success
+  // 5. Success
   return NextResponse.json(
     { success: true },
     { status: 201, headers: RESPONSE_HEADERS },

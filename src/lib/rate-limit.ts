@@ -1,7 +1,6 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
 import { hasDatabaseUrl } from "./env";
-import { queryDb } from "./db";
 
 type Bucket = {
   count: number;
@@ -13,8 +12,12 @@ const buckets = new Map<string, Bucket>();
 let rateLimitTableReady = false;
 
 export async function checkRateLimit(req: NextRequest, options: { scope: string; max: number; windowMs: number }) {
-  if (hasDatabaseUrl()) {
-    return checkDatabaseRateLimit(req, options);
+  if (hasDatabaseUrl() && !isCloudflareRuntime()) {
+    try {
+      return await checkDatabaseRateLimit(req, options);
+    } catch (error) {
+      console.warn(`[rate-limit] Falling back to in-memory limiter for ${options.scope}`, error);
+    }
   }
   return checkMemoryRateLimit(req, options);
 }
@@ -56,6 +59,7 @@ async function checkDatabaseRateLimit(req: NextRequest, options: { scope: string
   const windowStart = Math.floor(now / options.windowMs) * options.windowMs;
   const resetAt = windowStart + options.windowMs;
 
+  const { queryDb } = await import("./db");
   const result = await queryDb<{ hit_count: number }>(
     `insert into api_rate_limits (scope, client_key, window_started_at, hit_count, expires_at)
      values ($1, $2, to_timestamp($3 / 1000.0), 1, to_timestamp($4 / 1000.0))
@@ -75,6 +79,7 @@ async function checkDatabaseRateLimit(req: NextRequest, options: { scope: string
 
 async function ensureRateLimitTable() {
   if (rateLimitTableReady) return;
+  const { queryDb } = await import("./db");
   await queryDb(`
     create table if not exists api_rate_limits (
       scope text not null,
@@ -86,6 +91,12 @@ async function ensureRateLimitTable() {
     )
   `);
   rateLimitTableReady = true;
+}
+
+function isCloudflareRuntime() {
+  return process.env["NEXT_RUNTIME"] === "edge"
+    || process.env["CF_PAGES"] === "1"
+    || Boolean(process.env["CF_WORKER_NAME"]);
 }
 
 function clientIdentity(req: NextRequest) {

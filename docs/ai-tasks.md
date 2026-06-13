@@ -5,9 +5,10 @@
 
 ## Now
 
-- [ ] Commit the stabilized state — see exact `git add` commands in `docs/ai-handoff.md` Step 1. Do NOT use `git add .`.
+- [ ] Create Supabase Mumbai project (`ap-south-1`), apply `20260605_user_progress.sql` + `20260615_feedback.sql`, and update deployment env vars.
+- [ ] Create Cloudflare R2 buckets from `docs/cloudflare-opennext-runbook.md`, upload runtime data, and run `npm run cf:preview` with real Cloudflare bindings.
+- [ ] Continue Cloudflare migration: convert `/api/search`, `/api/official-questions/*`, `/api/workspace-questions/*`, and subject/detail loaders from sync `fs` to async R2 runtime-data shards.
 - [ ] Add hosted Supabase env vars on the deployment target and apply `supabase/migrations/20260605_user_progress.sql` for production auth/progress.
-- [ ] (Codex/product) Add authoritative optional PYQ source files in `PYQS/optional/` and extend `parseOptionalOfficialRows()` in `src/lib/official-pyqs.ts` to read from them, replacing the current `workspace-optional-fallback` approach.
 - [ ] (Codex/data) Add curated `driveId/filename → topperName` map for remaining anonymous PDFs, especially Public Administration, Anthropology, and PSIR (starter map already in `data/curation/topper-name-overrides.json`).
 - [ ] (Codex/data) OCR: resume local-pdfs-only paid OCR after providing a valid `OPENAI_BASE_URL` and credential smoke-testable key; set `OCR_OPENAI_MODEL` explicitly or let `--verify-key` auto-discover a likely vision model from `/v1/models`. Keep input restricted to `/Volumes/Acer/open-topper/local-pdfs` or repo `local-pdfs`; keep heavy outputs under `/Volumes/Acer/open-topper/extracted_data/ocr_openai/`; do not use `downloaded-pdfs` unless a future request explicitly restores that workflow.
 
@@ -23,6 +24,8 @@
 
 ## Done (recent)
 
+- [x] Added Cloudflare Workers/OpenNext baseline: `wrangler.jsonc`, `open-next.config.ts`, R2 runtime-data prep/upload scripts, async PDF answer-source runtime-data loader, Supabase HTTP feedback writes, and passing `npm run cf:build`.
+- [x] Added authoritative optional PYQ source files in `PYQS/optional/` and updated `official-pyqs.ts` to prefer optional-official rows over workspace fallback.
 - [x] Fixed official PYQ builder subject-card scoring bug and regenerated healthy public official links (841 linked questions / 18,234 linked copies); full tests, typecheck, lint, leak checks, and production build passed.
 - [x] OCR local-only estimate completed on Acer mirror (2,541 PDFs / 125,654 pages); paid verification correctly blocked on invalid/missing direct OpenAI OCR config before pilot/full.
 - [x] Kiro stabilization pass: fixed TS2540 in security-hardening test, ran full verification (lint, typecheck, 28 tests, public-leak-check, build) — all green. Created 5 steering files + 3 hooks.

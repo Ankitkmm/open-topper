@@ -27,6 +27,33 @@ export type Database = {
         };
         Relationships: [];
       };
+      feedback: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          page_path: string;
+          category: "bug" | "suggestion" | "content" | "other";
+          message: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          page_path: string;
+          category: "bug" | "suggestion" | "content" | "other";
+          message: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string | null;
+          page_path?: string;
+          category?: "bug" | "suggestion" | "content" | "other";
+          message?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

@@ -49,7 +49,7 @@ export default async function Page({
     }
   }
 
-  const resolved = resolvePdfSourceForToken(answerId, token);
+  const resolved = await resolvePdfSourceForToken(answerId, token);
   if (!resolved.ok) {
     return (
       <main className="library-page min-h-screen px-6 py-16">

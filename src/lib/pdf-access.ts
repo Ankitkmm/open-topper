@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import type { NextRequest } from "next/server";
 import {
   ANSWER_SOURCE_HEADERS,
-  getResolvedAnswerSource,
+  getResolvedAnswerSourceAsync,
   isSameOriginRequest,
   isValidAnswerId,
 } from "./answer-sources";
@@ -126,11 +126,11 @@ export async function enforcePdfAccess(
   return null;
 }
 
-export function resolvePdfSourceForToken(answerId: string, token: string) {
+export async function resolvePdfSourceForToken(answerId: string, token: string) {
   const verified = verifyPdfAccessToken(token, answerId);
   if (!verified.ok) return { ok: false as const, status: 403, error: verified.error };
 
-  const source = getResolvedAnswerSource(answerId);
+  const source = await getResolvedAnswerSourceAsync(answerId);
   if (!source.ok) {
     return {
       ok: false as const,
@@ -145,8 +145,8 @@ export function resolvePdfSourceForToken(answerId: string, token: string) {
   };
 }
 
-export function buildPdfEmbedResponse(answerId: string) {
-  const source = getResolvedAnswerSource(answerId);
+export async function buildPdfEmbedResponse(answerId: string) {
+  const source = await getResolvedAnswerSourceAsync(answerId);
   if (!source.ok) {
     return {
       ok: false as const,

@@ -25,7 +25,7 @@ export async function GET(
   if (sessionError) return sessionError;
 
   const token = getPdfAccessTokenFromRequest(req, answerId);
-  const resolved = resolvePdfSourceForToken(answerId, token);
+  const resolved = await resolvePdfSourceForToken(answerId, token);
   if (!resolved.ok) {
     return Response.json({ error: resolved.error }, { status: resolved.status, headers: ANSWER_SOURCE_HEADERS });
   }

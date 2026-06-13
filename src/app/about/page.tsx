@@ -8,14 +8,6 @@ import {
   SITE_NAME,
 } from "@/lib/marketing";
 
-// TODO: remove before production — Cloudflare Workers edge runtime proof-of-concept
-// This page has no Node.js-only dependencies (no fs, path, crypto, process.cwd())
-// and serves as a validation that static marketing pages can run on edge runtime.
-// NOTE: edge runtime disables static generation — this page becomes ƒ (dynamic)
-// instead of ○ (static). For production, consider removing this annotation and
-// keeping the page statically generated for best performance.
-export const runtime = "edge";
-
 export const metadata: Metadata = {
   title: `About ${SITE_NAME}`,
   description: `Why ${SITE_NAME} exists and who it is meant to help.`,
