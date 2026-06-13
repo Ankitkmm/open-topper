@@ -369,7 +369,6 @@ function SubjectWorkspaceView({
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <span className="study-badge">{question.paper}</span>
                           {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
-                          {question.marks && <span className="study-badge">{question.marks} marks</span>}
                           <span className="study-badge study-badge-accent">
                             {question.topperCount} {question.topperCount === 1 ? "copy" : "copies"}
                           </span>
@@ -426,7 +425,6 @@ function SubjectWorkspaceView({
                                         {copy.rank && <span className="study-badge">AIR {copy.rank}</span>}
                                         {copy.year && <span className="study-badge">{copy.year}</span>}
                                         {copy.institute && <span className="study-badge">{copy.institute}</span>}
-                                        {copy.marks && <span className="study-badge">{copy.marks}</span>}
                                         {copy.pageHint && <span className="study-badge">Page {copy.pageHint}</span>}
                                       </div>
                                       {!copy.sourceAvailable && (

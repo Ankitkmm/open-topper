@@ -78,7 +78,6 @@ export function QuestionCards({ initialQuestions, totalFiltered, searchParams }:
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <span className="study-badge study-badge-accent">{question.subjectLabel}</span>
                     {question.estimatedYear && <span className="study-badge">{question.estimatedYear}</span>}
-                    {question.marks && <span className="study-badge">{question.marks} marks</span>}
                     <span className="study-badge">
                       {question.linkedInsights.length} topper {question.linkedInsights.length === 1 ? "copy" : "copies"}
                     </span>
