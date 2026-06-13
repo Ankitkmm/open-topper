@@ -57,8 +57,8 @@ const ANCHOR_NOISE = new Set([
 ]);
 
 const ESSAY_FALLBACK_NOISE = new Set([
-  "one", "two", "three", "best", "more", "less", "there", "life", "man", "human", "you", "your",
-  "good", "true", "cost", "all", "who", "having", "other", "without", "with", "being", "after",
+  "one", "two", "three", "more", "less", "there", "you", "your",
+  "cost", "all", "who", "having", "other", "without", "with", "being", "after",
   "before", "first", "second", "third", "always", "never", "nothing", "wrong", "mean", "means",
   "itself", "much", "see", "very", "make", "made", "way", "ways", "thing", "things",
 ]);
@@ -255,84 +255,89 @@ function main() {
   let looseTopicMatchQuestionCount = 0;
 
   for (const row of officialRows) {
-    let acceptedCards: CandidateMatch[] = [];
-    let reviewCandidates: Array<{
-      cardId: string;
-      extractedQuestion: string;
-      category: string;
-      paper: string;
-      confidence: number;
-      reason: string;
-      linkedCopies: number;
-    }> = [];
+    try {
+      let acceptedCards: CandidateMatch[] = [];
+      let reviewCandidates: Array<{
+        cardId: string;
+        extractedQuestion: string;
+        category: string;
+        paper: string;
+        confidence: number;
+        reason: string;
+        linkedCopies: number;
+      }> = [];
 
-    if (isEssayRow(row)) {
-      const essayMatches = matchEssayOfficialRow(row, essayPromptEntries, essayExactIndex, essaySignatureIndex, answersByCard);
-      acceptedCards = essayMatches.acceptedCards;
-      reviewCandidates = essayMatches.reviewCandidates;
-    } else {
-      const subjectCards = cardsBySubject.get(row.subjectKey) || [];
-      const exactIndex = exactIndexBySubject.get(row.subjectKey) || new Map<string, PyqCard[]>();
-      const tokenIndex = tokenIndexBySubject.get(row.subjectKey) || new Map<string, number[]>();
-      const exactCards = exactIndex.get(normalizeQuestion(row.question)) || [];
-
-      if (exactCards.length > 0) {
-        acceptedCards = exactCards.map((card) => ({
-          card,
-          matchType: "direct",
-          confidence: 1,
-          reason: "Normalized official PYQ text exactly matches the extracted topper-answer card.",
-        }));
+      if (isEssayRow(row)) {
+        const essayMatches = matchEssayOfficialRow(row, essayPromptEntries, essayExactIndex, essaySignatureIndex, answersByCard);
+        acceptedCards = essayMatches.acceptedCards;
+        reviewCandidates = essayMatches.reviewCandidates;
       } else {
-        const scored = scoreCandidates(row, subjectCards, tokenIndex, idf);
-        acceptedCards = scored
-          .map(({ card, score }) => ({ card, score, matchType: classifyScore(score) }))
-          .filter((match): match is { card: PyqCard; score: Score; matchType: MatchType } => Boolean(match.matchType))
-          .slice(0, THRESHOLD.maxCardsPerOfficial)
-          .map(({ card, score, matchType }) => ({
+        const subjectCards = cardsBySubject.get(row.subjectKey) || [];
+        const exactIndex = exactIndexBySubject.get(row.subjectKey) || new Map<string, PyqCard[]>();
+        const tokenIndex = tokenIndexBySubject.get(row.subjectKey) || new Map<string, number[]>();
+        const exactCards = exactIndex.get(normalizeQuestion(row.question)) || [];
+
+        if (exactCards.length > 0) {
+          acceptedCards = exactCards.map((card) => ({
             card,
-            matchType,
-            confidence: round(Math.max(score.confidence, score.matchFloor)),
-            reason: explainScore(score),
-            score,
+            matchType: "direct",
+            confidence: 1,
+            reason: "Normalized official PYQ text exactly matches the extracted topper-answer card.",
           }));
+        } else {
+          const scored = scoreCandidates(row, subjectCards, tokenIndex, idf);
+          acceptedCards = scored
+            .map(({ card, score }) => ({ card, score, matchType: classifyScore(score) }))
+            .filter((match): match is { card: PyqCard; score: Score; matchType: MatchType } => Boolean(match.matchType))
+            .slice(0, THRESHOLD.maxCardsPerOfficial)
+            .map(({ card, score, matchType }) => ({
+              card,
+              matchType,
+              confidence: round(Math.max(score.confidence, score.matchFloor)),
+              reason: explainScore(score),
+              score,
+            }));
 
-        reviewCandidates = scored
-          .filter(({ score }) => score.matchFloor >= THRESHOLD.review || score.confidence >= THRESHOLD.review)
-          .slice(0, 6)
-          .map(({ card, score }) => ({
-            cardId: card.id,
-            extractedQuestion: card.question,
-            category: card.category,
-            paper: card.paper,
-            confidence: round(score.confidence),
-            reason: explainScore(score),
-            linkedCopies: answersByCard.get(card.id)?.length || 0,
-          }));
+          reviewCandidates = scored
+            .filter(({ score }) => score.matchFloor >= THRESHOLD.review || score.confidence >= THRESHOLD.review)
+            .slice(0, 6)
+            .map(({ card, score }) => ({
+              cardId: card.id,
+              extractedQuestion: card.question,
+              category: card.category,
+              paper: card.paper,
+              confidence: round(score.confidence),
+              reason: explainScore(score),
+              linkedCopies: answersByCard.get(card.id)?.length || 0,
+            }));
+        }
       }
-    }
 
-    if (acceptedCards.some((match) => match.matchType === "direct")) exactQuestionCount += 1;
-    if (acceptedCards.some((match) => match.matchType === "strong")) strongQuestionCount += 1;
-    if (acceptedCards.some((match) => match.matchType === "topic-match")) topicMatchQuestionCount += 1;
-    if (acceptedCards.some((match) => match.matchType === "loose-topic-match")) looseTopicMatchQuestionCount += 1;
+      if (acceptedCards.some((match) => match.matchType === "direct")) exactQuestionCount += 1;
+      if (acceptedCards.some((match) => match.matchType === "strong")) strongQuestionCount += 1;
+      if (acceptedCards.some((match) => match.matchType === "topic-match")) topicMatchQuestionCount += 1;
+      if (acceptedCards.some((match) => match.matchType === "loose-topic-match")) looseTopicMatchQuestionCount += 1;
 
-    if (reviewCandidates.length > 0 && acceptedCards.length === 0) {
-      ambiguousOfficialMatches.push({
-        officialQuestionId: row.id,
-        officialQuestion: row.question,
-        subject: row.subjectKey,
-        candidates: reviewCandidates,
+      if (reviewCandidates.length > 0 && acceptedCards.length === 0) {
+        ambiguousOfficialMatches.push({
+          officialQuestionId: row.id,
+          officialQuestion: row.question,
+          subject: row.subjectKey,
+          candidates: reviewCandidates,
+        });
+      }
+
+      const acceptedAnswers = acceptedCards.flatMap((match) => {
+        const cardAnswers = answersByCard.get(match.card.id) || [];
+        return cardAnswers.map((answer) => toAcceptedAnswer(row.id, row.question, answer, match));
       });
+
+      const deduped = capOfficialAnswers(dedupeOfficialAnswers(acceptedAnswers));
+      if (deduped.length > 0) links[row.id] = deduped.map(toPublicAnswerLink);
+    } catch (err) {
+      console.warn(`[build-official-pyq-links] Skipping row ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
+      continue;
     }
-
-    const acceptedAnswers = acceptedCards.flatMap((match) => {
-      const cardAnswers = answersByCard.get(match.card.id) || [];
-      return cardAnswers.map((answer) => toAcceptedAnswer(row.id, row.question, answer, match));
-    });
-
-    const deduped = capOfficialAnswers(dedupeOfficialAnswers(acceptedAnswers));
-    if (deduped.length > 0) links[row.id] = deduped.map(toPublicAnswerLink);
   }
 
   const allLinks = Object.values(links).flat();
@@ -621,7 +626,7 @@ function scoreEssayCandidates(
   entries: EssayPromptEntry[],
 ) {
   const officialPromptTokens = uniqueValues(essayTokens(row.question));
-  const officialThemeTokens = uniqueValues(essayThemeTokens([...row.syllabusTags, ...row.keywords].join(" ")));
+  const officialThemeTokens = uniqueValues(essayThemeTokens([row.question, ...row.syllabusTags, ...row.keywords].join(" ")));
   const bestByCard = new Map<string, { entry: EssayPromptEntry; score: EssayScore }>();
 
   for (const entry of entries) {
@@ -629,7 +634,8 @@ function scoreEssayCandidates(
 
     const sharedPromptTokens = intersect(officialPromptTokens, entry.promptTokens);
     const sharedThemeTokens = intersect(officialThemeTokens, entry.cardThemeTokens);
-    if (sharedPromptTokens.length === 0) continue;
+    // Allow candidates through if they have any prompt OR theme token overlap
+    if (sharedPromptTokens.length === 0 && sharedThemeTokens.length === 0) continue;
 
     const promptCoverage = sharedPromptTokens.length / Math.max(1, officialPromptTokens.length);
     const promptJaccard = sharedPromptTokens.length / Math.max(1, new Set([...officialPromptTokens, ...entry.promptTokens]).size);
@@ -648,8 +654,8 @@ function scoreEssayCandidates(
     };
 
     if (
-      sharedPromptTokens.length < 2
-      && !(sharedPromptTokens.length >= 1 && themeCoverage >= 0.34 && promptCoverage >= 0.12 && confidence >= 0.24)
+      sharedPromptTokens.length < 1
+      && themeCoverage < 0.20
     ) {
       continue;
     }
@@ -668,7 +674,18 @@ function essayScoreSortValue(score: EssayScore) {
 }
 
 function classifyEssayScore(score: EssayScore): MatchType | null {
+  // Strong: near-exact prompt match
   if (score.sharedPromptTokens.length >= 2 && score.promptCoverage >= 0.86 && score.promptJaccard >= 0.76) return "strong";
+
+  // Topic match: significant thematic overlap
+  if (score.sharedPromptTokens.length >= 2 && score.promptCoverage >= 0.40 && score.confidence >= 0.24) return "topic-match";
+
+  // Loose topic match: any thematic relevance (essays share broad themes)
+  if (score.sharedPromptTokens.length >= 1 && score.themeCoverage >= 0.25 && score.confidence >= 0.20) return "loose-topic-match";
+
+  // Even looser: if theme overlap is strong, accept with minimal prompt overlap
+  if (score.themeCoverage >= 0.34 && score.confidence >= 0.18) return "loose-topic-match";
+
   return null;
 }
 
@@ -1060,7 +1077,14 @@ function cardSemanticTokens(card: PyqCard) {
 }
 
 function topicTokensForOfficial(row: ReturnType<typeof loadOfficialRows>[number]) {
-  return cleanTopicTokens([...row.syllabusTags, ...row.keywords, row.category].join(" "));
+  const tagTokens = cleanTopicTokens([...row.syllabusTags, ...row.keywords, row.category].join(" "));
+  // If tag-derived tokens are empty or too generic (e.g., history rows where syllabusTags
+  // are just "History Paper 1" and "history" is filtered by SUBJECT_NOISE), fall back to
+  // extracting topic tokens from the question text itself — mirroring what cardTopicTokens does.
+  if (tagTokens.length === 0) {
+    return cleanTopicTokens([row.question, ...row.syllabusTags, ...row.keywords, row.category].join(" "));
+  }
+  return tagTokens;
 }
 
 function cardTopicTokens(card: PyqCard) {
@@ -1200,9 +1224,31 @@ function tokens(value: string) {
   const out = normalizeQuestion(key)
     .split(" ")
     .map(stem)
-    .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token));
+    .filter((token) => (token.length >= 3 || /^\d{2,4}$/.test(token)) && !STOP_WORDS.has(token))
+    .filter((token) => !isLikelyHindiOcrNoise(token));
   TOKEN_CACHE.set(key, out);
   return out;
+}
+
+/**
+ * Detects tokens that are likely romanized Hindi OCR noise.
+ * These are produced when Tesseract OCRs bilingual Hindi+English question papers.
+ * After lowercasing and stemming, they become 3-7 char consonant-heavy fragments
+ * like "ssa", "hud", "aret", "aferat", "sas", "fife", "pfe", "srrenft".
+ */
+function isLikelyHindiOcrNoise(token: string): boolean {
+  // Numeric tokens are fine
+  if (/^\d+$/.test(token)) return false;
+  // Very short tokens (3 chars) that are all consonants are suspicious
+  const vowels = (token.match(/[aeiou]/g) || []).length;
+  const ratio = vowels / token.length;
+  // Tokens with zero vowels and length 3-8 are almost certainly Hindi noise
+  if (vowels === 0 && token.length >= 3 && token.length <= 8) return true;
+  // Tokens with very low vowel ratio (< 15%) and short length are noise
+  if (ratio < 0.15 && token.length >= 3 && token.length <= 7) return true;
+  // Tokens with triple+ consecutive consonants not common in English
+  if (/[^aeiou]{4,}/.test(token) && token.length <= 8 && ratio < 0.25) return true;
+  return false;
 }
 
 function essayNormalizeToken(token: string) {
@@ -1221,6 +1267,30 @@ function essayNormalizeToken(token: string) {
   if (["patriarchy", "patriarchal", "patriarch"].includes(token)) return "patriarch";
   if (["justice", "just", "justic"].includes(token)) return "justic";
   if (["election", "electoral", "elect"].includes(token)) return "elect";
+  // Moral/ethical cluster
+  if (["moral", "morality", "ethic", "ethical", "virtue", "virtuous", "righteou"].includes(token)) return "moral";
+  // Truth/knowledge cluster
+  if (["truth", "wisdom", "knowledge", "wise", "knowledg", "enlighten"].includes(token)) return "truth";
+  // Adversity/struggle cluster
+  if (["adversity", "hardship", "misfortune", "struggl", "struggle", "suffer", "difficult", "bitter", "obstacle", "setback"].includes(token)) return "adversity";
+  // Experience/lesson cluster
+  if (["experience", "lesson", "learn", "learnt"].includes(token)) return "lesson";
+  // Freedom/liberty cluster
+  if (["freedom", "liberty", "liber", "free", "emancipat", "independen"].includes(token)) return "freedom";
+  // Science/innovation cluster
+  if (["science", "scientific", "innovat", "invention", "research", "discover"].includes(token)) return "science";
+  // Environment/nature cluster
+  if (["environment", "environmental", "ecology", "ecological", "nature", "natural", "climat", "sustain"].includes(token)) return "environ";
+  // Women/gender cluster
+  if (["women", "woman", "gender", "feminist", "feminism", "female", "girl"].includes(token)) return "women";
+  // Peace/conflict cluster
+  if (["peace", "peaceful", "conflict", "war", "violence", "violent", "harmony", "harmon"].includes(token)) return "peace";
+  // Progress/development cluster
+  if (["progress", "development", "develop", "growth", "modern", "modernity", "moderniz", "advanc"].includes(token)) return "progress";
+  // Corruption/integrity cluster
+  if (["corruption", "corrupt", "integrity", "honest", "honesty", "transpar"].includes(token)) return "integrity";
+  // Leadership/governance cluster
+  if (["leadership", "leader", "governance", "govern", "administr", "bureaucr"].includes(token)) return "leadership";
   return token;
 }
 

@@ -10,26 +10,58 @@ const {
   filterPublishableLinksForRow,
   groupRelevantQuestions,
   isOptionalOfficialQuestionText,
+  loadOfficialRows,
+  parseOptionalPaperNumber,
 } = __testUtils;
 
 type OfficialAnswerLinkForTest = Parameters<typeof filterPublishableLinksForRow>[1][number];
 
-test('optional official fallback exposes subject-scoped official shells instead of empty optional pages', () => {
-  const expectedOptionalSubjects = [
-    'geography',
-    'sociology',
-    'psir',
-    'public-administration',
-    'anthropology',
-    'history',
-  ];
+const EXPECTED_OPTIONAL_SUBJECTS = [
+  'geography',
+  'sociology',
+  'psir',
+  'public-administration',
+  'anthropology',
+  'history',
+] as const;
 
-  for (const subjectKey of expectedOptionalSubjects) {
+const OPTIONAL_OFFICIAL_ROW_FLOORS = {
+  geography: 90,
+  sociology: 90,
+  psir: 55,
+  'public-administration': 85,
+  anthropology: 60,
+  history: 90,
+} as const;
+
+test('optional official source files expose authoritative subject-scoped shells instead of workspace fallback rows', () => {
+  const rows = loadOfficialRows();
+
+  for (const subjectKey of EXPECTED_OPTIONAL_SUBJECTS) {
+    const subjectRows = rows.filter((row) => row.subjectKey === subjectKey);
+    const officialRows = subjectRows.filter((row) => row.sourceKind === 'optional-official');
+    const fallbackRows = subjectRows.filter((row) => row.sourceKind === 'workspace-optional-fallback');
     const shells = getOfficialSubjectPyqShells(subjectKey, '', 8);
-    assert.ok(shells.length > 0, `expected ${subjectKey} to have official/fallback PYQ shells`);
+
+    assert.ok(officialRows.length >= OPTIONAL_OFFICIAL_ROW_FLOORS[subjectKey], `expected ${subjectKey} to have authoritative optional PYQs`);
+    assert.equal(fallbackRows.length, 0, `expected ${subjectKey} to suppress workspace fallback rows once official source rows exist`);
+    assert.ok(
+      officialRows.every((row) => !JSON.stringify({ source: row.source, question: row.question }).match(/upsc\.gov\.in|\/Users\/|\/Volumes\/|extracted_data/i)),
+      `expected ${subjectKey} optional source rows not to expose source URLs, local paths, or extraction roots`,
+    );
+    assert.ok(shells.length > 0, `expected ${subjectKey} to have official PYQ shells`);
     assert.ok(shells.every((shell) => shell.subjectKey === subjectKey), `expected ${subjectKey} shells to remain subject-scoped`);
     assert.ok(shells.every((shell) => !shell.id.startsWith('pyq_gs')), `expected ${subjectKey} shells not to expose legacy GS workspace IDs`);
+    assert.ok(shells.every((shell) => !JSON.stringify(shell).includes('upsc.gov.in')), `expected ${subjectKey} public shells not to leak UPSC source URLs`);
+    assert.ok(shells.every((shell) => !JSON.stringify(shell).includes('/Users/')), `expected ${subjectKey} public shells not to leak local paths`);
   }
+});
+
+test('optional official parser accepts roman and numeric paper labels', () => {
+  assert.equal(parseOptionalPaperNumber('Paper I'), 1);
+  assert.equal(parseOptionalPaperNumber('Paper - II'), 2);
+  assert.equal(parseOptionalPaperNumber('Paper 1'), 1);
+  assert.equal(parseOptionalPaperNumber('P2'), 2);
 });
 
 test('optional official question text gate rejects notes while accepting real PYQ-style demands', () => {

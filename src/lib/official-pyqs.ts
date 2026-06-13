@@ -719,6 +719,8 @@ function parseOptionalOfficialRows(): OfficialRow[] {
   const rows: OfficialRow[] = [];
   const idCounts = new Map<string, number>();
   const optionalDir = join(PYQ_DIR, "optional");
+  // Fingerprint → earliest row index for deduplication (earliest year wins, same year = first occurrence)
+  const fingerprintMap = new Map<string, number>();
 
   for (const subjectKey of OPTIONAL_OFFICIAL_SUBJECTS) {
     const fileName = OPTIONAL_OFFICIAL_SOURCE_FILES[subjectKey];
@@ -734,48 +736,74 @@ function parseOptionalOfficialRows(): OfficialRow[] {
       const columns = line.split("\t");
       if (columns.length < 5) continue;
 
-      const [
-        yearRaw,
-        paperRaw,
-        questionNoRaw,
-        topicRaw,
-        questionRaw,
-        tagsRaw = "",
-        marksRaw = "",
-        sourceRaw = "",
-      ] = columns;
+      try {
+        const [
+          yearRaw,
+          paperRaw,
+          questionNoRaw,
+          topicRaw,
+          questionRaw,
+          tagsRaw = "",
+          marksRaw = "",
+          sourceRaw = "",
+        ] = columns;
 
-      const year = toYear(yearRaw);
-      const paperNumber = parseOptionalPaperNumber(paperRaw);
-      const questionNo = cleanText(questionNoRaw);
-      const question = cleanOptionalFallbackQuestionText(questionRaw);
-      if (!year || !paperNumber || !questionNo || !isOptionalOfficialQuestionText(question)) continue;
+        const year = toYear(yearRaw);
+        const paperNumber = parseOptionalPaperNumber(paperRaw);
+        const questionNo = cleanText(questionNoRaw);
+        const question = cleanOptionalFallbackQuestionText(questionRaw);
+        if (!year || !paperNumber || !questionNo || !isOptionalOfficialQuestionText(question)) continue;
 
-      const baseId = `official_${subjectKey}_${year}_p${paperNumber}_${slug(questionNo) || `row_${lineIndex + 1}`}`;
-      const duplicateCount = idCounts.get(baseId) || 0;
-      idCounts.set(baseId, duplicateCount + 1);
+        // Deduplicate by fingerprint within the same subject — earliest year wins
+        const fingerprint = normalizeOfficialQuestionFingerprint(question);
+        if (fingerprint) {
+          const fpKey = `${subjectKey}::${fingerprint}`;
+          const existingIdx = fingerprintMap.get(fpKey);
+          if (existingIdx !== undefined) {
+            const existing = rows[existingIdx];
+            // Keep the existing row if it has the earlier or same year
+            if (existing.year !== null && (year === null || existing.year <= year)) {
+              continue;
+            }
+            // Replace existing row with the earlier-year row
+            rows.splice(existingIdx, 1);
+            // Adjust indices in fingerprint map for rows after the removed one
+            for (const [key, idx] of fingerprintMap.entries()) {
+              if (idx > existingIdx) fingerprintMap.set(key, idx - 1);
+            }
+          }
+          fingerprintMap.set(fpKey, rows.length);
+        }
 
-      const topic = cleanText(topicRaw);
-      const tags = uniqueClean([
-        topic,
-        ...cleanList(tagsRaw),
-        subject.label,
-      ]);
-      const marks = parseInt(marksRaw, 10);
+        const baseId = `official_${subjectKey}_${year}_p${paperNumber}_${slug(questionNo) || `row_${lineIndex + 1}`}`;
+        const duplicateCount = idCounts.get(baseId) || 0;
+        idCounts.set(baseId, duplicateCount + 1);
 
-      rows.push({
-        id: duplicateCount ? `${baseId}_${duplicateCount + 1}` : baseId,
-        subjectKey,
-        question,
-        paper: `Paper ${paperNumber}`,
-        category: subject.label,
-        year,
-        marks: Number.isFinite(marks) ? marks : null,
-        syllabusTags: topic ? [topic] : [],
-        keywords: tags,
-        sourceKind: "optional-official",
-        source: cleanText(sourceRaw) || fileName,
-      });
+        const topic = cleanText(topicRaw);
+        const tags = uniqueClean([
+          topic,
+          ...cleanList(tagsRaw),
+          subject.label,
+        ]);
+        const marks = parseInt(marksRaw, 10);
+
+        rows.push({
+          id: duplicateCount ? `${baseId}_${duplicateCount + 1}` : baseId,
+          subjectKey,
+          question,
+          paper: `Paper ${paperNumber}`,
+          category: subject.label,
+          year,
+          marks: Number.isFinite(marks) ? marks : null,
+          syllabusTags: topic ? [topic] : [],
+          keywords: tags,
+          sourceKind: "optional-official",
+          source: cleanText(sourceRaw) || fileName,
+        });
+      } catch (err) {
+        console.warn(`[parseOptionalOfficialRows] Skipping malformed row at ${fileName}:${lineIndex + 1}: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
     }
   }
 
@@ -822,12 +850,15 @@ function parseOptionalWorkspaceOfficialRows(subjectsWithCanonicalOptional = new 
 }
 
 function parseOptionalPaperNumber(value: string) {
-  const match = String(value || "").match(/\b(?:paper|p)?\s*([12])\b/i);
+  const normalized = String(value || "")
+    .replace(/\b(?:one|i)\b/gi, "1")
+    .replace(/\b(?:two|ii)\b/gi, "2");
+  const match = normalized.match(/\b(?:paper|p)?\s*[-:]?\s*([12])\b/i);
   return match ? Number(match[1]) : null;
 }
 
 function cleanOptionalFallbackQuestionText(value: string) {
-  return cleanText(value)
+  return cleanOptionalOcrArtifacts(cleanText(value))
     .replace(/^["'“”]+/, "")
     .replace(/["'“”]+$/, "")
     .replace(/^\s*Q\s*Que\b[\s:.)-]*/i, "")
@@ -837,6 +868,214 @@ function cleanOptionalFallbackQuestionText(value: string) {
     .replace(/\s*\(\s*\)\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function cleanOptionalOcrArtifacts(value: string) {
+  let clean = value
+    .replace(/\b(?:SLPM|PHKM|QP|CSM)[A-Z0-9\-/ ]{0,36}\b/gi, " ")
+    .replace(/\[?\s*P\.?\s*T\.?\s*O\.?\s*\]?/gi, " ")
+    .replace(/\b(?:SECTION|Gis|wus|ware|wave)\s*[-/]?\s*[AB]\b/gi, " ")
+    .replace(/\b(?:10|15|20)\s*[xX]\s*5\s*=\s*50\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const directive = clean.match(
+    /\b(?:What|Why|How|Where|Which|Can|Does|Do|Is|Are|Were|Was|Has|Have|Discuss|Explain|Examine|Analyse|Analyze|Comment|Elucidate|Evaluate|Assess|Review|Distinguish|Compare|Contrast|Define|Delineate|Highlight|Identify|Illustrate|Account|Trace|Outline|Justify|Describe|Write|Mention|Give|Support|Clarify|Expand)\b/,
+  );
+  if (directive?.index && directive.index > 8) {
+    const prefix = clean.slice(0, directive.index);
+    const suffix = clean.slice(directive.index).trim();
+    // Official optional PDFs are bilingual scans. Tesseract often emits a
+    // romanized Hindi prefix before the English question. Strip that prefix
+    // only when the suffix is a substantial English demand; keep prefixes
+    // that contain a real English question mark (letter sequences followed by ?)
+    // because they may be part of a translated demand whose English verb appears later.
+    // Scattered `?` from Hindi OCR noise (e.g. "28?" or "F?") is not a real question mark.
+    const hasRealQuestionInPrefix = /[a-z]{3,}\s*\?/i.test(prefix);
+    if (suffix.length >= 28 && !hasRealQuestionInPrefix) {
+      clean = suffix;
+    }
+  }
+
+  // Second pass: detect quoted English phrases preceded by Hindi OCR noise.
+  // History papers often have: `Hindi noise "English quoted assertion" English directive.`
+  // If a quoted phrase (10+ chars starting with a capital letter) exists and is preceded
+  // by gibberish, start from the quote. We require the quote to be followed by a capital
+  // letter to avoid anchoring on stray quote marks in Hindi OCR noise.
+  // This runs unconditionally because the directive pass may fail when the directive verb
+  // is at the very end (suffix too short) or the quote precedes the directive.
+  const quoteMatch = clean.match(/[""\u201c]([A-Z][^"""\u201d]{9,})/);
+  if (quoteMatch?.index && quoteMatch.index > 5) {
+    const prefixBeforeQuote = clean.slice(0, quoteMatch.index).trim();
+    // Only strip if the prefix looks like Hindi noise (high proportion of short/gibberish words)
+    const prefixWords = prefixBeforeQuote.split(/\s+/);
+    const noiseWords = prefixWords.filter((w) => {
+      const lower = w.toLowerCase().replace(/[^a-z]/g, "");
+      if (!lower || lower.length <= 1) return true;
+      // Common short English words that appear in valid prefixes
+      if (/^(?:the|and|for|are|but|not|was|has|had|its|can|how|did|who|his|her|our|this|that|with|from|been|have|were|does|what|also|into|such|more|most|than|very|only|just|each|both|some|much|many|they|will)$/i.test(lower)) return false;
+      // Short (2-4 char) unknown words are likely noise
+      if (lower.length <= 4) return true;
+      // No vowels = noise
+      if (!/[aeiou]/.test(lower)) return true;
+      return false;
+    });
+    const noiseRatio = prefixWords.length > 0 ? noiseWords.length / prefixWords.length : 0;
+    if (noiseRatio > 0.5) {
+      const afterQuote = clean.slice(quoteMatch.index);
+      if (afterQuote.length >= 28) {
+        clean = afterQuote;
+      }
+    }
+  }
+
+  // Third pass: strip remaining romanized Hindi OCR noise.
+  // Bilingual UPSC papers produce romanized Hindi fragments (short nonsense words)
+  // interspersed with the English question. Remove them.
+  clean = stripRomanizedHindiNoise(clean);
+
+  return clean
+    .replace(/\s+(?:10|15|20|25|30|50|1s|IS)\s*$/i, "")
+    .replace(/\s+([,.;:?])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Strips romanized Hindi OCR noise from bilingual question text.
+ * Tesseract on Hindi+English question papers produces romanized garbage like:
+ * "ssa hud ate ot arr veda darite sate FI sts ya aa A pfe-srrenfte aferat"
+ * These are short, consonant-heavy, non-English fragments that dilute token scoring.
+ *
+ * Strategy: find the noise prefix and strip it. We look for the first run of 3+
+ * consecutive English-like words — that marks the start of the real question.
+ */
+function stripRomanizedHindiNoise(value: string): string {
+  const words = value.split(/\s+/);
+  if (words.length < 4) return value;
+
+  // Known short English words that should never be classified as noise
+  const KEEP_SHORT = new Set([
+    // 2-char
+    "do", "go", "if", "in", "is", "it", "no", "of", "on", "or", "so", "to", "up", "us", "we",
+    "an", "as", "at", "be", "by", "he", "me", "my", "ok",
+    // 3-char
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one",
+    "our", "out", "has", "his", "how", "its", "may", "new", "now", "old", "see", "way", "who",
+    "did", "get", "let", "say", "she", "too", "use", "war", "act", "age", "ago", "aid", "aim",
+    "air", "art", "ask", "bad", "ban", "bar", "big", "bit", "box", "bus", "buy", "car", "cut",
+    "day", "due", "ear", "eat", "end", "era", "eye", "far", "few", "fit", "fly", "got", "gun",
+    "hit", "hot", "ill", "job", "key", "law", "lay", "led", "lie", "lot", "low", "map", "met",
+    "mix", "nor", "odd", "oil", "own", "pay", "per", "put", "ran", "raw", "red", "rid", "run",
+    "sat", "set", "sir", "sit", "six", "tax", "ten", "top", "try", "two", "van", "via", "won",
+    "yet", "yes",
+    // 4-char common English
+    "also", "army", "back", "been", "best", "body", "both", "came", "case", "city", "come",
+    "cold", "coup", "cult", "dark", "deal", "deep", "does", "done", "down", "draw", "each",
+    "east", "even", "ever", "face", "fact", "fall", "felt", "find", "fire", "form", "free",
+    "from", "full", "fund", "gave", "give", "goal", "gold", "gone", "good", "grew", "grow",
+    "gulf", "half", "hall", "hand", "hard", "have", "head", "held", "help", "here", "high",
+    "hold", "holy", "home", "hope", "idea", "into", "iron", "just", "keen", "keep", "kept",
+    "kill", "kind", "king", "knew", "know", "lack", "laid", "land", "last", "late", "lead",
+    "left", "less", "life", "like", "line", "link", "list", "live", "long", "look", "lord",
+    "lose", "loss", "lost", "love", "made", "make", "many", "mark", "mass", "mean", "meet",
+    "mind", "miss", "mode", "more", "most", "much", "must", "name", "near", "need", "next",
+    "nine", "none", "note", "once", "only", "open", "over", "paid", "part", "pass", "past",
+    "path", "plan", "play", "plot", "plus", "poet", "poll", "pool", "poor", "port", "post",
+    "pull", "push", "race", "rain", "rank", "rare", "rate", "real", "rest", "rice", "rich",
+    "rise", "risk", "road", "role", "root", "rose", "rule", "rush", "safe", "said", "salt",
+    "same", "sang", "save", "seat", "self", "sell", "send", "sent", "shot", "show", "shut",
+    "side", "sign", "site", "size", "sold", "sole", "some", "song", "soon", "sort", "soul",
+    "step", "stop", "such", "sure", "take", "talk", "tall", "tell", "term", "test", "text",
+    "that", "them", "then", "they", "this", "thus", "till", "time", "tiny", "told", "tone",
+    "took", "tool", "town", "tree", "true", "turn", "type", "unit", "upon", "used", "user",
+    "vast", "very", "view", "vote", "wage", "wait", "wake", "walk", "wall", "want", "wars",
+    "weak", "week", "well", "went", "west", "what", "when", "whom", "wide", "wife", "wild",
+    "will", "wind", "wine", "wise", "wish", "with", "wood", "word", "wore", "work", "writ",
+    "year", "zero", "zone",
+    // Common abbreviations
+    "gdp", "usa", "ussr", "wto", "imf", "ngo", "ilo", "uno",
+  ]);
+
+  function isEnglishWord(word: string): boolean {
+    const lower = word.toLowerCase().replace(/[^a-z]/g, "");
+    if (!lower) return false;
+    // Question markers like Q5, Q3b, etc. are valid English tokens
+    if (/^[Qq]\d{1,2}[a-e]?$/i.test(word)) return true;
+    // Numeric or alphanumeric tokens (years, marks) are valid
+    if (/^\d+$/.test(word)) return true;
+    // Punctuation-bearing words with quotes are likely English context
+    if (/[""\u201c\u201d]/.test(word)) return true;
+    // Words 5+ chars with common English suffix patterns
+    if (lower.length >= 5 && /[aeiou]/.test(lower) && /(?:tion|ment|ness|ence|ance|ical|ious|ated|ting|ally|ible|able|ture|logy|ward|ship|ised|ized|ular|eous|ling|less|like|ful|dom|ist|ism|ive|ory|ary|ery|ant|ent|ous|ing|ity|ble|ize|ise|ess|eth|ern|ial|age|ure|ple)$/.test(lower)) {
+      return true;
+    }
+    // Known short English words
+    if (KEEP_SHORT.has(lower)) return true;
+    // Words with 5+ chars and reasonable vowel ratio
+    if (lower.length >= 5) {
+      const vowels = (lower.match(/[aeiou]/g) || []).length;
+      const ratio = vowels / lower.length;
+      if (ratio >= 0.25 && ratio <= 0.55) return true;
+      if (ratio < 0.2 && lower.length <= 8) return false;
+    }
+    // Short words (2-4 chars) not in English set — likely noise
+    if (lower.length <= 4 && !KEEP_SHORT.has(lower)) {
+      if (/^[A-Z]{2,5}$/.test(word) && /^(?:CE|AD|BC|EU|UN|US|UK|EIC|INC|VOC|RBI|NDA|UPA|BJP|RSS|INA)$/i.test(word)) {
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  // Score each word
+  const scored = words.map((word) => ({ word, english: isEnglishWord(word) }));
+
+  // Strategy 1: Find the noise prefix. Look for the first run of 3+ consecutive
+  // English words — that marks the start of the real English text.
+  let englishRunStart = -1;
+  let consecutiveEnglish = 0;
+  for (let i = 0; i < scored.length; i++) {
+    if (scored[i].english) {
+      if (consecutiveEnglish === 0) englishRunStart = i;
+      consecutiveEnglish++;
+      if (consecutiveEnglish >= 3) {
+        // Found a run of 3+ English words. If it starts after some noise, strip the prefix.
+        // Require at least 3 noise-prefix words to avoid stripping legitimate short prefixes
+        // like "Q5" or "1." from question numbers.
+        if (englishRunStart >= 3) {
+          const prefixNoise = scored.slice(0, englishRunStart).filter((s) => !s.english).length;
+          const prefixTotal = englishRunStart;
+          // If the prefix is mostly noise (> 50%), strip it
+          if (prefixNoise / prefixTotal > 0.5) {
+            const cleaned = words.slice(englishRunStart).join(" ").replace(/\s+/g, " ").trim();
+            if (cleaned.length >= 20) return cleaned;
+          }
+        }
+        break;
+      }
+    } else {
+      consecutiveEnglish = 0;
+      englishRunStart = -1;
+    }
+  }
+
+  // Strategy 2: If the overall text has > 30% noise words, filter them out entirely.
+  const noiseCount = scored.filter((s) => !s.english).length;
+  const englishCount = scored.filter((s) => s.english).length;
+
+  if (noiseCount >= words.length * 0.3 && englishCount > 0) {
+    const cleaned = scored
+      .filter((s) => s.english)
+      .map((s) => s.word)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (cleaned.length >= 20) return cleaned;
+  }
+
+  return value;
 }
 
 function loadWorkspaceSnapshot(): WorkspaceSnapshot {
@@ -1195,6 +1434,8 @@ export const __testUtils = {
   extractMatchedEssayPrompt,
   cleanOptionalFallbackQuestionText,
   isOptionalOfficialQuestionText,
+  loadOfficialRows,
+  parseOptionalPaperNumber,
   rankOfficialRow,
   rankOfficialTopicMatch,
   meaningfulTopicTerms,
