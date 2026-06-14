@@ -1,0 +1,12 @@
+# Keep private runtime/source data out of Vercel uploads; build falls back to committed data/pdf-runtime/*.
+data/app/answer-sources.json
+data/app/pdf-r2-map.json
+data/app/pdf-map.json
+data/app/questions.json
+data/app/ocr-summaries.json
+data/app/entities/**
+data/app/vault/**
+data/mappings/**
+extracted_data/**
+local-pdfs/**
+vault_merged_docs/**

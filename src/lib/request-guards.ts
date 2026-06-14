@@ -10,6 +10,19 @@ export function requireSameOriginMutation(req: NextRequest) {
   );
 }
 
+export function requireSameOriginRead(req: NextRequest, headers: HeadersInit = PRIVATE_JSON_HEADERS) {
+  const fetchSite = req.headers.get("sec-fetch-site")?.toLowerCase();
+  const origin = req.headers.get("origin");
+  const referer = req.headers.get("referer");
+  const hasBrowserContext = fetchSite === "same-origin" || Boolean(origin) || Boolean(referer);
+
+  if (hasBrowserContext && isSameOriginRequest(req)) return null;
+  return Response.json(
+    { error: "Same-origin browser requests are required." },
+    { status: 403, headers },
+  );
+}
+
 export function requireJsonContentType(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   if (contentType.toLowerCase().split(";")[0]?.trim() === "application/json") return null;

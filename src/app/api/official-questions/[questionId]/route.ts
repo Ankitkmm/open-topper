@@ -1,13 +1,17 @@
 import { NextRequest } from "next/server";
 import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
-import { getOfficialQuestionDetail } from "@/lib/official-pyqs";
+import { getOfficialQuestionDetailAsync } from "@/lib/official-pyqs";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { requireSameOriginRead } from "@/lib/request-guards";
 import { PRIVATE_JSON_HEADERS, requireSessionResponseIfConfigured } from "@/lib/session-access";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ questionId: string }> },
 ) {
+  const sameOriginError = requireSameOriginRead(req);
+  if (sameOriginError) return sameOriginError;
+
   const limit = await checkRateLimit(req, {
     scope: "detail-official",
     max: getSearchRateLimitMax(),
@@ -27,7 +31,7 @@ export async function GET(
   if (sessionError) return sessionError;
 
   const { questionId } = await params;
-  const question = getOfficialQuestionDetail(questionId);
+  const question = await getOfficialQuestionDetailAsync(questionId);
   if (!question) {
     return Response.json({ error: "Question not found." }, { status: 404, headers: PRIVATE_JSON_HEADERS });
   }

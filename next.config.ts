@@ -29,6 +29,7 @@ const securityHeaders = [
 
 const apiSecurityHeaders = [
   { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet, noimageindex" },
+  { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
   ...securityHeaders,
   { key: "Cache-Control", value: "private, no-store" },
 ];

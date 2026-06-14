@@ -34,14 +34,14 @@ const PUBLIC_ROUTES = [
  */
 
 /**
- * Makes a fetch request with a 5-second timeout.
+ * Makes a fetch request with a 15-second timeout.
  * @param {string} url
  * @param {RequestInit} [options]
  * @returns {Promise<Response>}
  */
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     return res;
@@ -114,13 +114,44 @@ async function testAnswerSourceCORS() {
 }
 
 /**
- * Test GET /api/search?q=test returns 200.
+ * Test headerless GET /api/search?q=test is blocked.
  * @returns {Promise<TestResult>}
  */
-async function testSearchAPI() {
+async function testSearchAPIDirectBlocked() {
   const route = '/api/search?q=test';
   try {
     const res = await fetchWithTimeout(`${BASE_URL}${route}`);
+    return {
+      route,
+      method: 'GET',
+      expected: 403,
+      actual: res.status,
+      pass: res.status === 403,
+    };
+  } catch (err) {
+    return {
+      route,
+      method: 'GET',
+      expected: 403,
+      actual: err instanceof Error ? err.message : 'ERROR',
+      pass: false,
+    };
+  }
+}
+
+/**
+ * Test same-origin browser-like GET /api/search?q=test returns 200.
+ * @returns {Promise<TestResult>}
+ */
+async function testSearchAPISameOriginAllowed() {
+  const route = '/api/search?q=test';
+  try {
+    const res = await fetchWithTimeout(`${BASE_URL}${route}`, {
+      headers: {
+        Referer: `${BASE_URL}/browse`,
+        'Sec-Fetch-Site': 'same-origin',
+      },
+    });
     return {
       route,
       method: 'GET',
@@ -228,7 +259,8 @@ async function main() {
   results.push(await testAnswerSourceCORS());
 
   // API: search
-  results.push(await testSearchAPI());
+  results.push(await testSearchAPIDirectBlocked());
+  results.push(await testSearchAPISameOriginAllowed());
 
   // PDF route (no redirect)
   results.push(await testPDFRoute());

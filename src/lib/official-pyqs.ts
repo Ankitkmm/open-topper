@@ -7,10 +7,24 @@ import {
   isEssayInstructionSegment,
   normalizeEssayPromptForMatch,
 } from "./essay-normalization";
-import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "./public-records";
+import {
+  PUBLIC_TOPPER_NAME_FALLBACK,
+  normalizePublicTopperName,
+} from "./public-records";
 import type { SubjectPyqCard } from "./search-results";
-import { bestTokenMatchScore, matchesSearchTerm, normalizeSearchText, searchTerms, searchTokens } from "./search-text";
-import { getSubjectDefinition, getSubjectKeyFromValue, type SubjectKey } from "./subject-definitions";
+import {
+  bestTokenMatchScore,
+  matchesSearchTerm,
+  normalizeSearchText,
+  searchTerms,
+  searchTokens,
+} from "./search-text";
+import {
+  getSubjectDefinition,
+  getSubjectKeyFromValue,
+  type SubjectKey,
+} from "./subject-definitions";
+import { loadRuntimeJson } from "./runtime-data";
 
 interface OfficialWorkspaceCopy {
   answerId: string;
@@ -59,18 +73,41 @@ export interface OfficialRow {
   syllabusTags: string[];
   keywords: string[];
   sourceQuestionId?: string;
-  sourceKind?: "upsc-official" | "optional-official" | "workspace-optional-fallback";
+  sourceKind?:
+    | "upsc-official"
+    | "optional-official"
+    | "workspace-optional-fallback"
+    | "runtime-public-pyq";
   source?: string;
   workspaceQuestion?: OfficialWorkspaceQuestion;
 }
 
 let cachedRows: OfficialRow[] | null = null;
+let cachedRuntimeRows: OfficialRow[] | null = null;
+let cachedRuntimeRowsPromise: Promise<OfficialRow[]> | null = null;
 let cachedOfficialLinks: OfficialLinkDataset | null = null;
+let cachedOfficialLinksPromise: Promise<OfficialLinkDataset> | null = null;
 let cachedWorkspaceSnapshot: WorkspaceSnapshot | null = null;
 
 const PYQ_DIR = join(process.cwd(), "PYQS");
-const OFFICIAL_LINK_FILE = join(process.cwd(), "data", "app", "public-official-pyq-links.json");
-const WORKSPACE_INDEX_FILE = join(process.cwd(), "data", "app", "workspace-index.json");
+const OFFICIAL_LINK_FILE = join(
+  process.cwd(),
+  "data",
+  "app",
+  "public-official-pyq-links.json",
+);
+const WORKSPACE_INDEX_FILE = join(
+  process.cwd(),
+  "data",
+  "app",
+  "workspace-index.json",
+);
+const RUNTIME_DATA_MANIFEST_FILE = join(
+  process.cwd(),
+  ".cloudflare-runtime-data",
+  "manifest.json",
+);
+const RUNTIME_DATA_DIR = join(process.cwd(), ".cloudflare-runtime-data");
 
 const OPTIONAL_OFFICIAL_SUBJECTS: SubjectKey[] = [
   "geography",
@@ -121,6 +158,49 @@ interface OfficialLinkDataset {
   links?: Record<string, OfficialAnswerLink[]>;
 }
 
+interface RuntimePublicPyqInsight {
+  answerId?: string;
+  sourceAvailable?: boolean;
+  sourceStatus?: string | null;
+  topperName?: string | null;
+  nameStatus?: string;
+  rank?: number | null;
+  year?: number | null;
+  institute?: string | null;
+  marks?: string | number | null;
+  pageHint?: number | null;
+  pageStatus?: "valid" | "missing" | "fallback" | "out_of_range" | null;
+  interpretation?: string;
+  summary?: string;
+  summaryStatus?: string;
+}
+
+interface RuntimePublicPyqCard {
+  id?: string;
+  subjectKey?: string;
+  question?: string;
+  paper?: string;
+  category?: string;
+  estimatedYear?: number | null;
+  marks?: number | null;
+  syllabusTags?: string[];
+  keywords?: string[];
+  linkedInsights?: RuntimePublicPyqInsight[];
+}
+
+interface RuntimeDataManifest {
+  datasets?: Record<
+    string,
+    {
+      shards?: {
+        file: string;
+        key: string;
+        count: number;
+      }[];
+    }
+  >;
+}
+
 interface OfficialRowSearchRank {
   score: number;
   exactQuestionPhraseHit: boolean;
@@ -143,7 +223,9 @@ interface RelevantQuestionGroup {
   key: string;
   bestLink: OfficialAnswerLink;
   sourceAvailableCount: number;
-  topperCopies: NonNullable<SubjectPyqCard["relevantQuestions"]>[number]["topperCopies"];
+  topperCopies: NonNullable<
+    SubjectPyqCard["relevantQuestions"]
+  >[number]["topperCopies"];
 }
 
 const OFFICIAL_TOPIC_STOP_WORDS = new Set([
@@ -204,31 +286,123 @@ const OPTIONAL_QUESTION_DIRECTIVES = new Set([
   "write",
 ]);
 
-export function getOfficialSubjectPyqs(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
-  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map((entry) => toOfficialCard(entry.row));
+export function getOfficialSubjectPyqs(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+): SubjectPyqCard[] {
+  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map(
+    (entry) => toOfficialCard(entry.row),
+  );
 }
 
-export function getOfficialSubjectPyqShells(subjectKey: string, query = "", limit = 120, syllabus = ""): SubjectPyqCard[] {
-  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map((entry) => toOfficialShell(entry.row));
+export async function getOfficialSubjectPyqsAsync(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+): Promise<SubjectPyqCard[]> {
+  return Promise.all(
+    (
+      await getRankedOfficialSubjectRowsAsync(
+        subjectKey,
+        query,
+        limit,
+        syllabus,
+      )
+    ).map((entry) => toOfficialCardAsync(entry.row)),
+  );
 }
 
-function getRankedOfficialSubjectRows(subjectKey: string, query = "", limit = 120, syllabus = "") {
+export function getOfficialSubjectPyqShells(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+): SubjectPyqCard[] {
+  return getRankedOfficialSubjectRows(subjectKey, query, limit, syllabus).map(
+    (entry) => toOfficialShell(entry.row),
+  );
+}
+
+export async function getOfficialSubjectPyqShellsAsync(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+): Promise<SubjectPyqCard[]> {
+  return Promise.all(
+    (
+      await getRankedOfficialSubjectRowsAsync(
+        subjectKey,
+        query,
+        limit,
+        syllabus,
+      )
+    ).map((entry) => toOfficialShellAsync(entry.row)),
+  );
+}
+
+function getRankedOfficialSubjectRows(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+) {
+  return rankOfficialSubjectRows(
+    loadOfficialRows(),
+    subjectKey,
+    query,
+    limit,
+    syllabus,
+  );
+}
+
+async function getRankedOfficialSubjectRowsAsync(
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+) {
+  return rankOfficialSubjectRows(
+    await loadOfficialRowsAsync(),
+    subjectKey,
+    query,
+    limit,
+    syllabus,
+  );
+}
+
+function rankOfficialSubjectRows(
+  rows: OfficialRow[],
+  subjectKey: string,
+  query = "",
+  limit = 120,
+  syllabus = "",
+) {
   const terms = searchTerms(query);
   const normalizedSyllabus = cleanText(syllabus);
   const hasTopicFilter = Boolean(normalizedSyllabus);
-  return loadOfficialRows()
+  return rows
     .filter((row) => row.subjectKey === subjectKey)
     .map((row) => ({
       row,
-      rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank(),
-      topicRank: hasTopicFilter ? rankOfficialTopicMatch(row, normalizedSyllabus) : defaultOfficialTopicMatchRank(),
+      rank: terms.length
+        ? rankOfficialRow(row, terms, query)
+        : defaultOfficialRowRank(),
+      topicRank: hasTopicFilter
+        ? rankOfficialTopicMatch(row, normalizedSyllabus)
+        : defaultOfficialTopicMatchRank(),
     }))
     .filter((entry) => !hasTopicFilter || entry.topicRank.score > 0)
     .filter((entry) => entry.rank.score > 0)
-    .sort((left, right) => hasTopicFilter
-      ? compareOfficialTopicFilteredResults(left, right)
-      : compareOfficialRowSearchResults(left, right))
-    .slice(0, limit)
+    .sort((left, right) =>
+      hasTopicFilter
+        ? compareOfficialTopicFilteredResults(left, right)
+        : compareOfficialRowSearchResults(left, right),
+    )
+    .slice(0, limit);
 }
 
 export function getOfficialQuestionDetail(questionId: string) {
@@ -236,9 +410,23 @@ export function getOfficialQuestionDetail(questionId: string) {
   return row ? toOfficialCard(row) : null;
 }
 
+export async function getOfficialQuestionDetailAsync(questionId: string) {
+  const row = (await loadOfficialRowsAsync()).find(
+    (item) => item.id === questionId,
+  );
+  return row ? await toOfficialCardAsync(row) : null;
+}
+
 export function getOfficialQuestionShell(questionId: string) {
   const row = loadOfficialRows().find((item) => item.id === questionId);
   return row ? toOfficialShell(row) : null;
+}
+
+export async function getOfficialQuestionShellAsync(questionId: string) {
+  const row = (await loadOfficialRowsAsync()).find(
+    (item) => item.id === questionId,
+  );
+  return row ? await toOfficialShellAsync(row) : null;
 }
 
 export function getOfficialBrowsePyqs(
@@ -247,35 +435,90 @@ export function getOfficialBrowsePyqs(
   keyword = "",
   limit = 240,
 ): SubjectPyqCard[] {
+  return rankOfficialBrowseRows(
+    loadOfficialRows(),
+    query,
+    category,
+    keyword,
+    limit,
+  ).map((entry) => toOfficialShell(entry.row));
+}
+
+export async function getOfficialBrowsePyqsAsync(
+  query = "",
+  category = "",
+  keyword = "",
+  limit = 240,
+): Promise<SubjectPyqCard[]> {
+  return Promise.all(
+    rankOfficialBrowseRows(
+      await loadOfficialRowsAsync(),
+      query,
+      category,
+      keyword,
+      limit,
+    ).map((entry) => toOfficialShellAsync(entry.row)),
+  );
+}
+
+function rankOfficialBrowseRows(
+  rows: OfficialRow[],
+  query = "",
+  category = "",
+  keyword = "",
+  limit = 240,
+) {
   const terms = searchTerms(query);
   const cat = category.trim().toLowerCase();
   const kw = keyword.trim().toLowerCase();
 
-  return loadOfficialRows()
-    .filter((row) => !cat || cat === "all" || row.category.toLowerCase() === cat || row.subjectKey === cat)
-    .filter((row) => !kw || row.keywords.some((item) => item.toLowerCase().includes(kw)))
-    .map((row) => ({ row, rank: terms.length ? rankOfficialRow(row, terms, query) : defaultOfficialRowRank() }))
+  return rows
+    .filter(
+      (row) =>
+        !cat ||
+        cat === "all" ||
+        row.category.toLowerCase() === cat ||
+        row.subjectKey === cat,
+    )
+    .filter(
+      (row) =>
+        !kw || row.keywords.some((item) => item.toLowerCase().includes(kw)),
+    )
+    .map((row) => ({
+      row,
+      rank: terms.length
+        ? rankOfficialRow(row, terms, query)
+        : defaultOfficialRowRank(),
+    }))
     .filter((entry) => entry.rank.score > 0)
     .sort(compareOfficialRowSearchResults)
-    .slice(0, limit)
-    .map((entry) => toOfficialShell(entry.row));
+    .slice(0, limit);
 }
 
 export function getOfficialPyqStats() {
-  const rows = loadOfficialRows();
-  const cards = rows.map(toOfficialShell);
+  return summarizeOfficialRows(loadOfficialRows());
+}
+
+export async function getOfficialPyqStatsAsync() {
+  return summarizeOfficialRows(await loadOfficialRowsAsync());
+}
+
+function summarizeOfficialRows(rows: OfficialRow[]) {
   const categories = new Map<string, number>();
   let linkedCopies = 0;
 
-  for (const card of cards) {
-    categories.set(card.category, (categories.get(card.category) || 0) + 1);
-    linkedCopies += card.topperCount;
+  for (const row of rows) {
+    categories.set(row.category, (categories.get(row.category) || 0) + 1);
+    linkedCopies += row.workspaceQuestion?.linkedInsights.length ?? getPublishableLinksForRow(row).length;
   }
 
   return {
     totalQuestions: rows.length,
     linkedCopies,
-    categories: [...categories.entries()].map(([name, count]) => ({ name, count })),
+    categories: [...categories.entries()].map(([name, count]) => ({
+      name,
+      count,
+    })),
   };
 }
 
@@ -283,7 +526,9 @@ export function loadOfficialRows(): OfficialRow[] {
   if (cachedRows) return cachedRows;
 
   const optionalRows = parseOptionalOfficialRows();
-  const subjectsWithCanonicalOptional = new Set(optionalRows.map((row) => row.subjectKey));
+  const subjectsWithCanonicalOptional = new Set(
+    optionalRows.map((row) => row.subjectKey),
+  );
 
   cachedRows = [
     ...parseGs123(),
@@ -296,10 +541,48 @@ export function loadOfficialRows(): OfficialRow[] {
   return cachedRows;
 }
 
+export async function loadOfficialRowsAsync(): Promise<OfficialRow[]> {
+  if (cachedRuntimeRows) return cachedRuntimeRows;
+  if (!cachedRuntimeRowsPromise) {
+    cachedRuntimeRowsPromise = loadRuntimePublicPyqRows().then((rows) => {
+      cachedRuntimeRows = rows;
+      return rows;
+    });
+  }
+  return cachedRuntimeRowsPromise;
+}
+
 function toOfficialCard(row: OfficialRow): SubjectPyqCard {
   const links = getPublishableLinksForRow(row);
   const relevantQuestions = groupRelevantQuestions(links);
-  const topperCount = relevantQuestions.reduce((sum, relevant) => sum + relevant.topperCopies.length, 0);
+  const topperCount = relevantQuestions.reduce(
+    (sum, relevant) => sum + relevant.topperCopies.length,
+    0,
+  );
+
+  return {
+    id: row.id,
+    subjectKey: row.subjectKey,
+    question: withQuestionMarks(row.question, row.marks),
+    paper: row.paper,
+    category: row.category,
+    estimatedYear: row.year,
+    marks: row.marks,
+    syllabusTags: row.syllabusTags,
+    keywords: row.keywords,
+    topperCount,
+    relevantQuestionCount: relevantQuestions.length,
+    relevantQuestions,
+  };
+}
+
+async function toOfficialCardAsync(row: OfficialRow): Promise<SubjectPyqCard> {
+  const links = await getPublishableLinksForRowAsync(row);
+  const relevantQuestions = groupRelevantQuestions(links);
+  const topperCount = relevantQuestions.reduce(
+    (sum, relevant) => sum + relevant.topperCopies.length,
+    0,
+  );
 
   return {
     id: row.id,
@@ -337,6 +620,26 @@ function toOfficialShell(row: OfficialRow): SubjectPyqCard {
   };
 }
 
+async function toOfficialShellAsync(row: OfficialRow): Promise<SubjectPyqCard> {
+  const links = await getPublishableLinksForRowAsync(row);
+  const counts = summarizeRelevantLinks(links);
+
+  return {
+    id: row.id,
+    subjectKey: row.subjectKey,
+    question: withQuestionMarks(row.question, row.marks),
+    paper: row.paper,
+    category: row.category,
+    estimatedYear: row.year,
+    marks: row.marks,
+    syllabusTags: row.syllabusTags,
+    keywords: row.keywords,
+    topperCount: counts.topperCount,
+    relevantQuestionCount: counts.relevantQuestionCount,
+    relevantQuestions: [],
+  };
+}
+
 function getPublishableLinksForRow(row: OfficialRow) {
   const publicLinks = (loadOfficialLinkDataset().links?.[row.id] || [])
     .map((link) => normalizeOfficialAnswerLink(row, link))
@@ -351,15 +654,40 @@ function getPublishableLinksForRow(row: OfficialRow) {
   return dedupeOfficialLinks([...publicLinks, ...workspaceLinks]);
 }
 
-function normalizeOfficialAnswerLink(row: OfficialRow, link: OfficialAnswerLink): OfficialAnswerLink | null {
+async function getPublishableLinksForRowAsync(row: OfficialRow) {
+  const publicLinks =
+    row.sourceKind === "runtime-public-pyq"
+      ? []
+      : ((await loadOfficialLinkDatasetAsync()).links?.[row.id] || [])
+          .map((link) => normalizeOfficialAnswerLink(row, link))
+          .filter((link): link is OfficialAnswerLink => Boolean(link))
+          .filter((link) => isPublishableLink(row, link));
+
+  const workspaceLinks = workspaceLinksForOptionalRow(row)
+    .map((link) => normalizeOfficialAnswerLink(row, link))
+    .filter((link): link is OfficialAnswerLink => Boolean(link))
+    .filter((link) => isPublishableLink(row, link));
+
+  return dedupeOfficialLinks([...publicLinks, ...workspaceLinks]);
+}
+
+function normalizeOfficialAnswerLink(
+  row: OfficialRow,
+  link: OfficialAnswerLink,
+): OfficialAnswerLink | null {
   if (!isLinkSubjectCompatible(row, link)) return null;
 
   if (row.subjectKey !== "essay") return link;
 
-  const matchedPrompt = extractMatchedEssayPrompt(row.question, link.extractedQuestion);
+  const matchedPrompt = extractMatchedEssayPrompt(
+    row.question,
+    link.extractedQuestion,
+  );
   if (!matchedPrompt) return null;
 
-  const exact = normalizeEssayPromptForMatch(row.question) === normalizeEssayPromptForMatch(matchedPrompt);
+  const exact =
+    normalizeEssayPromptForMatch(row.question) ===
+    normalizeEssayPromptForMatch(matchedPrompt);
   return {
     ...link,
     extractedQuestion: matchedPrompt,
@@ -379,7 +707,8 @@ function dedupeOfficialLinks(links: OfficialAnswerLink[]) {
     const key = [
       link.topperAnswerId,
       link.cardId,
-      normalizeEssayPromptForMatch(link.extractedQuestion) || normalizeSearchText(link.extractedQuestion),
+      normalizeEssayPromptForMatch(link.extractedQuestion) ||
+        normalizeSearchText(link.extractedQuestion),
     ].join("|");
     if (seen.has(key)) continue;
     seen.add(key);
@@ -389,15 +718,22 @@ function dedupeOfficialLinks(links: OfficialAnswerLink[]) {
   return out;
 }
 
-function compareOfficialLinksForDedupe(left: OfficialAnswerLink, right: OfficialAnswerLink) {
-  return relevantQuestionMatchTypeWeight(right.matchType) - relevantQuestionMatchTypeWeight(left.matchType)
-    || right.matchConfidence - left.matchConfidence
-    || Number(hasUsableSource(right)) - Number(hasUsableSource(left));
+function compareOfficialLinksForDedupe(
+  left: OfficialAnswerLink,
+  right: OfficialAnswerLink,
+) {
+  return (
+    relevantQuestionMatchTypeWeight(right.matchType) -
+      relevantQuestionMatchTypeWeight(left.matchType) ||
+    right.matchConfidence - left.matchConfidence ||
+    Number(hasUsableSource(right)) - Number(hasUsableSource(left))
+  );
 }
 
 function summarizeRelevantLinks(links: OfficialAnswerLink[]) {
   const groupKeys = new Set<string>();
-  for (const link of links) groupKeys.add(`${link.cardId}|${link.extractedQuestion}`);
+  for (const link of links)
+    groupKeys.add(`${link.cardId}|${link.extractedQuestion}`);
   return {
     topperCount: links.length,
     relevantQuestionCount: groupKeys.size,
@@ -408,14 +744,28 @@ function isPublishableLink(row: OfficialRow, link: OfficialAnswerLink) {
   if (!isLinkSubjectCompatible(row, link)) return false;
 
   if (row.subjectKey === "essay") {
-    return Boolean(extractMatchedEssayPrompt(row.question, link.extractedQuestion))
-      && ["direct", "exact", "strong", "high-confidence"].includes(link.matchType)
-      && link.matchConfidence >= 0.84;
+    return (
+      Boolean(
+        extractMatchedEssayPrompt(row.question, link.extractedQuestion),
+      ) &&
+      ["direct", "exact", "strong", "high-confidence"].includes(
+        link.matchType,
+      ) &&
+      link.matchConfidence >= 0.84
+    );
   }
 
   if (["direct", "exact"].includes(link.matchType)) return true;
-  if (["strong", "high-confidence"].includes(link.matchType) && link.matchConfidence >= 0.68) return true;
-  if (["topic-match", "loose-topic-match", "reasoned"].includes(link.matchType) && link.matchConfidence >= 0.3) return true;
+  if (
+    ["strong", "high-confidence"].includes(link.matchType) &&
+    link.matchConfidence >= 0.68
+  )
+    return true;
+  if (
+    ["topic-match", "loose-topic-match", "reasoned"].includes(link.matchType) &&
+    link.matchConfidence >= 0.3
+  )
+    return true;
   return false;
 }
 
@@ -442,7 +792,12 @@ function inferLinkSubjectKey(link: OfficialAnswerLink) {
 
 function workspaceLinksForOptionalRow(row: OfficialRow): OfficialAnswerLink[] {
   const question = row.workspaceQuestion;
-  if (!question || !OPTIONAL_OFFICIAL_SUBJECTS.includes(row.subjectKey)) return [];
+  if (!question) return [];
+  if (
+    row.sourceKind !== "runtime-public-pyq" &&
+    !OPTIONAL_OFFICIAL_SUBJECTS.includes(row.subjectKey)
+  )
+    return [];
 
   return question.linkedInsights.map((copy) => ({
     officialQuestionId: row.id,
@@ -450,7 +805,8 @@ function workspaceLinksForOptionalRow(row: OfficialRow): OfficialAnswerLink[] {
     cardId: question.id,
     matchType: "direct",
     matchConfidence: 1,
-    matchReason: "Direct subject-scoped optional PYQ row from the curated optional workspace.",
+    matchReason:
+      "Direct subject-scoped optional PYQ row from the curated optional workspace.",
     extractedQuestion: row.question,
     paper: row.paper,
     category: row.category,
@@ -463,7 +819,9 @@ function workspaceLinksForOptionalRow(row: OfficialRow): OfficialAnswerLink[] {
     institute: copy.institute,
     marksObtained: copy.marks,
     sourceAvailable: copy.sourceAvailable,
-    sourceStatus: copy.sourceStatus || (copy.sourceAvailable ? "available" : "not_uploaded"),
+    sourceStatus:
+      copy.sourceStatus ||
+      (copy.sourceAvailable ? "available" : "not_uploaded"),
     pageNormalized: copy.pageHint,
     pageStatus: copy.pageStatus || (copy.pageHint ? "valid" : "missing"),
     summary: copy.summary || "",
@@ -472,7 +830,9 @@ function workspaceLinksForOptionalRow(row: OfficialRow): OfficialAnswerLink[] {
   }));
 }
 
-function groupRelevantQuestions(links: OfficialAnswerLink[]): SubjectPyqCard["relevantQuestions"] {
+function groupRelevantQuestions(
+  links: OfficialAnswerLink[],
+): SubjectPyqCard["relevantQuestions"] {
   const groups = new Map<string, OfficialAnswerLink[]>();
 
   for (const link of links) {
@@ -494,7 +854,9 @@ function groupRelevantQuestions(links: OfficialAnswerLink[]): SubjectPyqCard["re
       keywords: bestLink.keywords || [],
       matchType: bestLink.matchType,
       matchConfidence: bestLink.matchConfidence,
-      matchReason: bestLink.matchReason || matchLabel(bestLink.matchType, bestLink.matchConfidence),
+      matchReason:
+        bestLink.matchReason ||
+        matchLabel(bestLink.matchType, bestLink.matchConfidence),
       reviewStatus: "published" as const,
       topperCount: topperCopies.length,
       sourceAvailableCount,
@@ -502,7 +864,10 @@ function groupRelevantQuestions(links: OfficialAnswerLink[]): SubjectPyqCard["re
     }));
 }
 
-function buildRelevantQuestionGroup(key: string, group: OfficialAnswerLink[]): RelevantQuestionGroup {
+function buildRelevantQuestionGroup(
+  key: string,
+  group: OfficialAnswerLink[],
+): RelevantQuestionGroup {
   const bestLink = group.slice().sort(compareRelevantQuestionBestLinks)[0];
   const topperCopies = group
     .slice()
@@ -514,15 +879,25 @@ function buildRelevantQuestionGroup(key: string, group: OfficialAnswerLink[]): R
         sourceAvailable: hasUsableSource(link),
         sourceStatus: link.sourceStatus,
         topperName: resolvedName ?? PUBLIC_TOPPER_NAME_FALLBACK,
-        nameStatus: resolvedName ? (link.nameStatus && link.nameStatus !== "anonymous" ? link.nameStatus : "filename") : "anonymous",
+        nameStatus: resolvedName
+          ? link.nameStatus && link.nameStatus !== "anonymous"
+            ? link.nameStatus
+            : "filename"
+          : "anonymous",
         rank: link.rank,
         year: link.year,
         institute: link.institute,
         marks: link.marksObtained || null,
         pageHint: link.pageNormalized || null,
         pageStatus: link.pageStatus,
-        interpretation: usefulSummary(link.summary, link.summaryStatus) ? link.summary : "",
-        summaryStatus: usefulSummary(link.summary, link.summaryStatus) ? "available" : (link.summaryStatus === "too_thin" ? "too_thin" : "missing"),
+        interpretation: usefulSummary(link.summary, link.summaryStatus)
+          ? link.summary
+          : "",
+        summaryStatus: usefulSummary(link.summary, link.summaryStatus)
+          ? "available"
+          : link.summaryStatus === "too_thin"
+            ? "too_thin"
+            : "missing",
         valueAdds: link.valueAdds || [],
         matchType: link.matchType,
         matchConfidence: link.matchConfidence,
@@ -533,34 +908,61 @@ function buildRelevantQuestionGroup(key: string, group: OfficialAnswerLink[]): R
   return {
     key,
     bestLink,
-    sourceAvailableCount: topperCopies.filter((copy) => copy.sourceAvailable).length,
+    sourceAvailableCount: topperCopies.filter((copy) => copy.sourceAvailable)
+      .length,
     topperCopies,
   };
 }
 
-function compareRelevantQuestionGroups(left: RelevantQuestionGroup, right: RelevantQuestionGroup) {
-  return right.sourceAvailableCount - left.sourceAvailableCount
-    || compareRelevantQuestionBestLinks(left.bestLink, right.bestLink)
-    || right.topperCopies.length - left.topperCopies.length;
+function compareRelevantQuestionGroups(
+  left: RelevantQuestionGroup,
+  right: RelevantQuestionGroup,
+) {
+  return (
+    right.sourceAvailableCount - left.sourceAvailableCount ||
+    compareRelevantQuestionBestLinks(left.bestLink, right.bestLink) ||
+    right.topperCopies.length - left.topperCopies.length
+  );
 }
 
-function compareRelevantQuestionBestLinks(left: OfficialAnswerLink, right: OfficialAnswerLink) {
-  return relevantQuestionMatchTypeWeight(right.matchType) - relevantQuestionMatchTypeWeight(left.matchType)
-    || right.matchConfidence - left.matchConfidence
-    || Number(hasUsableSource(right)) - Number(hasUsableSource(left))
-    || Number(right.sourceAvailable) - Number(left.sourceAvailable)
-    || compareNullableNumber(left.rank, right.rank, "asc")
-    || compareNullableNumber(right.year, left.year, "asc");
+function compareRelevantQuestionBestLinks(
+  left: OfficialAnswerLink,
+  right: OfficialAnswerLink,
+) {
+  return (
+    relevantQuestionMatchTypeWeight(right.matchType) -
+      relevantQuestionMatchTypeWeight(left.matchType) ||
+    right.matchConfidence - left.matchConfidence ||
+    Number(hasUsableSource(right)) - Number(hasUsableSource(left)) ||
+    Number(right.sourceAvailable) - Number(left.sourceAvailable) ||
+    compareNullableNumber(left.rank, right.rank, "asc") ||
+    compareNullableNumber(right.year, left.year, "asc")
+  );
 }
 
-function compareTopperCopies(left: OfficialAnswerLink, right: OfficialAnswerLink) {
-  return Number(hasUsableSource(right)) - Number(hasUsableSource(left))
-    || right.matchConfidence - left.matchConfidence
-    || relevantQuestionMatchTypeWeight(right.matchType) - relevantQuestionMatchTypeWeight(left.matchType);
+function compareTopperCopies(
+  left: OfficialAnswerLink,
+  right: OfficialAnswerLink,
+) {
+  return (
+    Number(hasUsableSource(right)) - Number(hasUsableSource(left)) ||
+    right.matchConfidence - left.matchConfidence ||
+    relevantQuestionMatchTypeWeight(right.matchType) -
+      relevantQuestionMatchTypeWeight(left.matchType)
+  );
 }
 
-function hasUsableSource(link: Pick<OfficialAnswerLink, "sourceAvailable" | "pageNormalized" | "pageStatus">) {
-  return link.sourceAvailable && Boolean(link.pageNormalized) && ["valid", "fallback"].includes(link.pageStatus);
+function hasUsableSource(
+  link: Pick<
+    OfficialAnswerLink,
+    "sourceAvailable" | "pageNormalized" | "pageStatus"
+  >,
+) {
+  return (
+    link.sourceAvailable &&
+    Boolean(link.pageNormalized) &&
+    ["valid", "fallback"].includes(link.pageStatus)
+  );
 }
 
 function relevantQuestionMatchTypeWeight(matchType: string) {
@@ -571,16 +973,27 @@ function relevantQuestionMatchTypeWeight(matchType: string) {
   return 0;
 }
 
-function compareNullableNumber(left: number | null, right: number | null, direction: "asc" | "desc") {
-  const leftValue = left ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
-  const rightValue = right ?? (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+function compareNullableNumber(
+  left: number | null,
+  right: number | null,
+  direction: "asc" | "desc",
+) {
+  const leftValue =
+    left ??
+    (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
+  const rightValue =
+    right ??
+    (direction === "asc" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY);
   return direction === "asc" ? leftValue - rightValue : rightValue - leftValue;
 }
 
 function matchLabel(matchType: string, confidence: number) {
-  if (["direct", "exact"].includes(matchType)) return "Direct extracted question match.";
-  if (["strong", "high-confidence"].includes(matchType)) return `Strong text match (${Math.round(confidence * 100)}%).`;
-  if (matchType === "topic-match") return `Same syllabus/topic match (${Math.round(confidence * 100)}%).`;
+  if (["direct", "exact"].includes(matchType))
+    return "Direct extracted question match.";
+  if (["strong", "high-confidence"].includes(matchType))
+    return `Strong text match (${Math.round(confidence * 100)}%).`;
+  if (matchType === "topic-match")
+    return `Same syllabus/topic match (${Math.round(confidence * 100)}%).`;
   return `Loose topic match (${Math.round(confidence * 100)}%).`;
 }
 
@@ -594,22 +1007,44 @@ function usefulSummary(summary: string, status?: string) {
 function loadOfficialLinkDataset() {
   if (cachedOfficialLinks) return cachedOfficialLinks;
   try {
-    cachedOfficialLinks = JSON.parse(readFileSync(OFFICIAL_LINK_FILE, "utf-8")) as OfficialLinkDataset;
+    cachedOfficialLinks = JSON.parse(
+      readFileSync(OFFICIAL_LINK_FILE, "utf-8"),
+    ) as OfficialLinkDataset;
   } catch {
     cachedOfficialLinks = {};
   }
   return cachedOfficialLinks;
 }
 
+async function loadOfficialLinkDatasetAsync(): Promise<OfficialLinkDataset> {
+  if (cachedOfficialLinks) return cachedOfficialLinks;
+  if (!cachedOfficialLinksPromise) {
+    cachedOfficialLinksPromise = loadRuntimeRecordDataset<OfficialAnswerLink[]>(
+      "public-official-pyq-links",
+      "links",
+      OFFICIAL_LINK_FILE,
+      "public official PYQ links",
+    ).then((dataset) => {
+      cachedOfficialLinks = dataset as OfficialLinkDataset;
+      return cachedOfficialLinks;
+    });
+  }
+  return cachedOfficialLinksPromise;
+}
+
 function parseGs123(): OfficialRow[] {
   const rows: OfficialRow[] = [];
-  const file = join(PYQ_DIR, "UPSC GS1-GS3 PYQS, topics might be theirs, dont do a 100 match while….md");
+  const file = join(
+    PYQ_DIR,
+    "UPSC GS1-GS3 PYQS, topics might be theirs, dont do a 100 match while….md",
+  );
   const lines = readFileSync(file, "utf-8").split(/\r?\n/);
   const seenIds = new Map<string, number>();
 
   for (const [lineIndex, line] of lines.entries()) {
     if (!/^\d{4}\t/.test(line)) continue;
-    const [yearRaw, paperRaw, numberRaw, areaRaw, questionRaw, tagsRaw = ""] = line.split("\t");
+    const [yearRaw, paperRaw, numberRaw, areaRaw, questionRaw, tagsRaw = ""] =
+      line.split("\t");
     const paperNumber = Number(paperRaw);
     if (![1, 2, 3].includes(paperNumber)) continue;
 
@@ -617,7 +1052,10 @@ function parseGs123(): OfficialRow[] {
     const keywords = cleanList(tagsRaw);
     const area = cleanText(areaRaw);
     if (area) keywords.unshift(area);
-    const numberSlug = numberRaw && numberRaw !== "undefined" ? slug(numberRaw) : `row_${lineIndex + 1}`;
+    const numberSlug =
+      numberRaw && numberRaw !== "undefined"
+        ? slug(numberRaw)
+        : `row_${lineIndex + 1}`;
     const baseId = `official_gs${paperNumber}_${yearRaw}_${numberSlug}`;
     const duplicateCount = seenIds.get(baseId) || 0;
     seenIds.set(baseId, duplicateCount + 1);
@@ -642,12 +1080,22 @@ function parseGs123(): OfficialRow[] {
 
 function parseGs4(): OfficialRow[] {
   const rows: OfficialRow[] = [];
-  const file = join(PYQ_DIR, "UPSC GS4, PYQS,  summaries topics might be theirs, dont do a 100 match….md");
+  const file = join(
+    PYQ_DIR,
+    "UPSC GS4, PYQS,  summaries topics might be theirs, dont do a 100 match….md",
+  );
   const lines = readFileSync(file, "utf-8").split(/\r?\n/);
 
   for (const line of lines) {
     if (!/^\d{4}\t/.test(line)) continue;
-    const [yearRaw, sectionRaw, numberRaw, questionRaw, tagsRaw = "", marksRaw = ""] = line.split("\t");
+    const [
+      yearRaw,
+      sectionRaw,
+      numberRaw,
+      questionRaw,
+      tagsRaw = "",
+      marksRaw = "",
+    ] = line.split("\t");
     const question = cleanText(questionRaw);
     if (!question) continue;
 
@@ -752,7 +1200,13 @@ function parseOptionalOfficialRows(): OfficialRow[] {
         const paperNumber = parseOptionalPaperNumber(paperRaw);
         const questionNo = cleanText(questionNoRaw);
         const question = cleanOptionalFallbackQuestionText(questionRaw);
-        if (!year || !paperNumber || !questionNo || !isOptionalOfficialQuestionText(question)) continue;
+        if (
+          !year ||
+          !paperNumber ||
+          !questionNo ||
+          !isOptionalOfficialQuestionText(question)
+        )
+          continue;
 
         // Deduplicate by fingerprint within the same subject — earliest year wins
         const fingerprint = normalizeOfficialQuestionFingerprint(question);
@@ -762,7 +1216,10 @@ function parseOptionalOfficialRows(): OfficialRow[] {
           if (existingIdx !== undefined) {
             const existing = rows[existingIdx];
             // Keep the existing row if it has the earlier or same year
-            if (existing.year !== null && (year === null || existing.year <= year)) {
+            if (
+              existing.year !== null &&
+              (year === null || existing.year <= year)
+            ) {
               continue;
             }
             // Replace existing row with the earlier-year row
@@ -780,11 +1237,7 @@ function parseOptionalOfficialRows(): OfficialRow[] {
         idCounts.set(baseId, duplicateCount + 1);
 
         const topic = cleanText(topicRaw);
-        const tags = uniqueClean([
-          topic,
-          ...cleanList(tagsRaw),
-          subject.label,
-        ]);
+        const tags = uniqueClean([topic, ...cleanList(tagsRaw), subject.label]);
         const marks = parseInt(marksRaw, 10);
 
         rows.push({
@@ -801,7 +1254,9 @@ function parseOptionalOfficialRows(): OfficialRow[] {
           source: cleanText(sourceRaw) || fileName,
         });
       } catch (err) {
-        console.warn(`[parseOptionalOfficialRows] Skipping malformed row at ${fileName}:${lineIndex + 1}: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(
+          `[parseOptionalOfficialRows] Skipping malformed row at ${fileName}:${lineIndex + 1}: ${err instanceof Error ? err.message : String(err)}`,
+        );
         continue;
       }
     }
@@ -810,8 +1265,10 @@ function parseOptionalOfficialRows(): OfficialRow[] {
   return rows;
 }
 
-function parseOptionalWorkspaceOfficialRows(subjectsWithCanonicalOptional = new Set<SubjectKey>()): OfficialRow[] {
-  const snapshot = loadWorkspaceSnapshot();
+function parseOptionalWorkspaceOfficialRows(
+  subjectsWithCanonicalOptional = new Set<SubjectKey>(),
+  snapshot = loadWorkspaceSnapshot(),
+): OfficialRow[] {
   const rows: OfficialRow[] = [];
   const seen = new Map<string, number>();
 
@@ -913,14 +1370,20 @@ function cleanOptionalOcrArtifacts(value: string) {
       const lower = w.toLowerCase().replace(/[^a-z]/g, "");
       if (!lower || lower.length <= 1) return true;
       // Common short English words that appear in valid prefixes
-      if (/^(?:the|and|for|are|but|not|was|has|had|its|can|how|did|who|his|her|our|this|that|with|from|been|have|were|does|what|also|into|such|more|most|than|very|only|just|each|both|some|much|many|they|will)$/i.test(lower)) return false;
+      if (
+        /^(?:the|and|for|are|but|not|was|has|had|its|can|how|did|who|his|her|our|this|that|with|from|been|have|were|does|what|also|into|such|more|most|than|very|only|just|each|both|some|much|many|they|will)$/i.test(
+          lower,
+        )
+      )
+        return false;
       // Short (2-4 char) unknown words are likely noise
       if (lower.length <= 4) return true;
       // No vowels = noise
       if (!/[aeiou]/.test(lower)) return true;
       return false;
     });
-    const noiseRatio = prefixWords.length > 0 ? noiseWords.length / prefixWords.length : 0;
+    const noiseRatio =
+      prefixWords.length > 0 ? noiseWords.length / prefixWords.length : 0;
     if (noiseRatio > 0.5) {
       const afterQuote = clean.slice(quoteMatch.index);
       if (afterQuote.length >= 28) {
@@ -957,44 +1420,392 @@ function stripRomanizedHindiNoise(value: string): string {
   // Known short English words that should never be classified as noise
   const KEEP_SHORT = new Set([
     // 2-char
-    "do", "go", "if", "in", "is", "it", "no", "of", "on", "or", "so", "to", "up", "us", "we",
-    "an", "as", "at", "be", "by", "he", "me", "my", "ok",
+    "do",
+    "go",
+    "if",
+    "in",
+    "is",
+    "it",
+    "no",
+    "of",
+    "on",
+    "or",
+    "so",
+    "to",
+    "up",
+    "us",
+    "we",
+    "an",
+    "as",
+    "at",
+    "be",
+    "by",
+    "he",
+    "me",
+    "my",
+    "ok",
     // 3-char
-    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one",
-    "our", "out", "has", "his", "how", "its", "may", "new", "now", "old", "see", "way", "who",
-    "did", "get", "let", "say", "she", "too", "use", "war", "act", "age", "ago", "aid", "aim",
-    "air", "art", "ask", "bad", "ban", "bar", "big", "bit", "box", "bus", "buy", "car", "cut",
-    "day", "due", "ear", "eat", "end", "era", "eye", "far", "few", "fit", "fly", "got", "gun",
-    "hit", "hot", "ill", "job", "key", "law", "lay", "led", "lie", "lot", "low", "map", "met",
-    "mix", "nor", "odd", "oil", "own", "pay", "per", "put", "ran", "raw", "red", "rid", "run",
-    "sat", "set", "sir", "sit", "six", "tax", "ten", "top", "try", "two", "van", "via", "won",
-    "yet", "yes",
+    "the",
+    "and",
+    "for",
+    "are",
+    "but",
+    "not",
+    "you",
+    "all",
+    "can",
+    "had",
+    "her",
+    "was",
+    "one",
+    "our",
+    "out",
+    "has",
+    "his",
+    "how",
+    "its",
+    "may",
+    "new",
+    "now",
+    "old",
+    "see",
+    "way",
+    "who",
+    "did",
+    "get",
+    "let",
+    "say",
+    "she",
+    "too",
+    "use",
+    "war",
+    "act",
+    "age",
+    "ago",
+    "aid",
+    "aim",
+    "air",
+    "art",
+    "ask",
+    "bad",
+    "ban",
+    "bar",
+    "big",
+    "bit",
+    "box",
+    "bus",
+    "buy",
+    "car",
+    "cut",
+    "day",
+    "due",
+    "ear",
+    "eat",
+    "end",
+    "era",
+    "eye",
+    "far",
+    "few",
+    "fit",
+    "fly",
+    "got",
+    "gun",
+    "hit",
+    "hot",
+    "ill",
+    "job",
+    "key",
+    "law",
+    "lay",
+    "led",
+    "lie",
+    "lot",
+    "low",
+    "map",
+    "met",
+    "mix",
+    "nor",
+    "odd",
+    "oil",
+    "own",
+    "pay",
+    "per",
+    "put",
+    "ran",
+    "raw",
+    "red",
+    "rid",
+    "run",
+    "sat",
+    "set",
+    "sir",
+    "sit",
+    "six",
+    "tax",
+    "ten",
+    "top",
+    "try",
+    "two",
+    "van",
+    "via",
+    "won",
+    "yet",
+    "yes",
     // 4-char common English
-    "also", "army", "back", "been", "best", "body", "both", "came", "case", "city", "come",
-    "cold", "coup", "cult", "dark", "deal", "deep", "does", "done", "down", "draw", "each",
-    "east", "even", "ever", "face", "fact", "fall", "felt", "find", "fire", "form", "free",
-    "from", "full", "fund", "gave", "give", "goal", "gold", "gone", "good", "grew", "grow",
-    "gulf", "half", "hall", "hand", "hard", "have", "head", "held", "help", "here", "high",
-    "hold", "holy", "home", "hope", "idea", "into", "iron", "just", "keen", "keep", "kept",
-    "kill", "kind", "king", "knew", "know", "lack", "laid", "land", "last", "late", "lead",
-    "left", "less", "life", "like", "line", "link", "list", "live", "long", "look", "lord",
-    "lose", "loss", "lost", "love", "made", "make", "many", "mark", "mass", "mean", "meet",
-    "mind", "miss", "mode", "more", "most", "much", "must", "name", "near", "need", "next",
-    "nine", "none", "note", "once", "only", "open", "over", "paid", "part", "pass", "past",
-    "path", "plan", "play", "plot", "plus", "poet", "poll", "pool", "poor", "port", "post",
-    "pull", "push", "race", "rain", "rank", "rare", "rate", "real", "rest", "rice", "rich",
-    "rise", "risk", "road", "role", "root", "rose", "rule", "rush", "safe", "said", "salt",
-    "same", "sang", "save", "seat", "self", "sell", "send", "sent", "shot", "show", "shut",
-    "side", "sign", "site", "size", "sold", "sole", "some", "song", "soon", "sort", "soul",
-    "step", "stop", "such", "sure", "take", "talk", "tall", "tell", "term", "test", "text",
-    "that", "them", "then", "they", "this", "thus", "till", "time", "tiny", "told", "tone",
-    "took", "tool", "town", "tree", "true", "turn", "type", "unit", "upon", "used", "user",
-    "vast", "very", "view", "vote", "wage", "wait", "wake", "walk", "wall", "want", "wars",
-    "weak", "week", "well", "went", "west", "what", "when", "whom", "wide", "wife", "wild",
-    "will", "wind", "wine", "wise", "wish", "with", "wood", "word", "wore", "work", "writ",
-    "year", "zero", "zone",
+    "also",
+    "army",
+    "back",
+    "been",
+    "best",
+    "body",
+    "both",
+    "came",
+    "case",
+    "city",
+    "come",
+    "cold",
+    "coup",
+    "cult",
+    "dark",
+    "deal",
+    "deep",
+    "does",
+    "done",
+    "down",
+    "draw",
+    "each",
+    "east",
+    "even",
+    "ever",
+    "face",
+    "fact",
+    "fall",
+    "felt",
+    "find",
+    "fire",
+    "form",
+    "free",
+    "from",
+    "full",
+    "fund",
+    "gave",
+    "give",
+    "goal",
+    "gold",
+    "gone",
+    "good",
+    "grew",
+    "grow",
+    "gulf",
+    "half",
+    "hall",
+    "hand",
+    "hard",
+    "have",
+    "head",
+    "held",
+    "help",
+    "here",
+    "high",
+    "hold",
+    "holy",
+    "home",
+    "hope",
+    "idea",
+    "into",
+    "iron",
+    "just",
+    "keen",
+    "keep",
+    "kept",
+    "kill",
+    "kind",
+    "king",
+    "knew",
+    "know",
+    "lack",
+    "laid",
+    "land",
+    "last",
+    "late",
+    "lead",
+    "left",
+    "less",
+    "life",
+    "like",
+    "line",
+    "link",
+    "list",
+    "live",
+    "long",
+    "look",
+    "lord",
+    "lose",
+    "loss",
+    "lost",
+    "love",
+    "made",
+    "make",
+    "many",
+    "mark",
+    "mass",
+    "mean",
+    "meet",
+    "mind",
+    "miss",
+    "mode",
+    "more",
+    "most",
+    "much",
+    "must",
+    "name",
+    "near",
+    "need",
+    "next",
+    "nine",
+    "none",
+    "note",
+    "once",
+    "only",
+    "open",
+    "over",
+    "paid",
+    "part",
+    "pass",
+    "past",
+    "path",
+    "plan",
+    "play",
+    "plot",
+    "plus",
+    "poet",
+    "poll",
+    "pool",
+    "poor",
+    "port",
+    "post",
+    "pull",
+    "push",
+    "race",
+    "rain",
+    "rank",
+    "rare",
+    "rate",
+    "real",
+    "rest",
+    "rice",
+    "rich",
+    "rise",
+    "risk",
+    "road",
+    "role",
+    "root",
+    "rose",
+    "rule",
+    "rush",
+    "safe",
+    "said",
+    "salt",
+    "same",
+    "sang",
+    "save",
+    "seat",
+    "self",
+    "sell",
+    "send",
+    "sent",
+    "shot",
+    "show",
+    "shut",
+    "side",
+    "sign",
+    "site",
+    "size",
+    "sold",
+    "sole",
+    "some",
+    "song",
+    "soon",
+    "sort",
+    "soul",
+    "step",
+    "stop",
+    "such",
+    "sure",
+    "take",
+    "talk",
+    "tall",
+    "tell",
+    "term",
+    "test",
+    "text",
+    "that",
+    "them",
+    "then",
+    "they",
+    "this",
+    "thus",
+    "till",
+    "time",
+    "tiny",
+    "told",
+    "tone",
+    "took",
+    "tool",
+    "town",
+    "tree",
+    "true",
+    "turn",
+    "type",
+    "unit",
+    "upon",
+    "used",
+    "user",
+    "vast",
+    "very",
+    "view",
+    "vote",
+    "wage",
+    "wait",
+    "wake",
+    "walk",
+    "wall",
+    "want",
+    "wars",
+    "weak",
+    "week",
+    "well",
+    "went",
+    "west",
+    "what",
+    "when",
+    "whom",
+    "wide",
+    "wife",
+    "wild",
+    "will",
+    "wind",
+    "wine",
+    "wise",
+    "wish",
+    "with",
+    "wood",
+    "word",
+    "wore",
+    "work",
+    "writ",
+    "year",
+    "zero",
+    "zone",
     // Common abbreviations
-    "gdp", "usa", "ussr", "wto", "imf", "ngo", "ilo", "uno",
+    "gdp",
+    "usa",
+    "ussr",
+    "wto",
+    "imf",
+    "ngo",
+    "ilo",
+    "uno",
   ]);
 
   function isEnglishWord(word: string): boolean {
@@ -1007,7 +1818,13 @@ function stripRomanizedHindiNoise(value: string): string {
     // Punctuation-bearing words with quotes are likely English context
     if (/[""\u201c\u201d]/.test(word)) return true;
     // Words 5+ chars with common English suffix patterns
-    if (lower.length >= 5 && /[aeiou]/.test(lower) && /(?:tion|ment|ness|ence|ance|ical|ious|ated|ting|ally|ible|able|ture|logy|ward|ship|ised|ized|ular|eous|ling|less|like|ful|dom|ist|ism|ive|ory|ary|ery|ant|ent|ous|ing|ity|ble|ize|ise|ess|eth|ern|ial|age|ure|ple)$/.test(lower)) {
+    if (
+      lower.length >= 5 &&
+      /[aeiou]/.test(lower) &&
+      /(?:tion|ment|ness|ence|ance|ical|ious|ated|ting|ally|ible|able|ture|logy|ward|ship|ised|ized|ular|eous|ling|less|like|ful|dom|ist|ism|ive|ory|ary|ery|ant|ent|ous|ing|ity|ble|ize|ise|ess|eth|ern|ial|age|ure|ple)$/.test(
+        lower,
+      )
+    ) {
       return true;
     }
     // Known short English words
@@ -1021,7 +1838,12 @@ function stripRomanizedHindiNoise(value: string): string {
     }
     // Short words (2-4 chars) not in English set — likely noise
     if (lower.length <= 4 && !KEEP_SHORT.has(lower)) {
-      if (/^[A-Z]{2,5}$/.test(word) && /^(?:CE|AD|BC|EU|UN|US|UK|EIC|INC|VOC|RBI|NDA|UPA|BJP|RSS|INA)$/i.test(word)) {
+      if (
+        /^[A-Z]{2,5}$/.test(word) &&
+        /^(?:CE|AD|BC|EU|UN|US|UK|EIC|INC|VOC|RBI|NDA|UPA|BJP|RSS|INA)$/i.test(
+          word,
+        )
+      ) {
         return true;
       }
       return false;
@@ -1045,11 +1867,17 @@ function stripRomanizedHindiNoise(value: string): string {
         // Require at least 3 noise-prefix words to avoid stripping legitimate short prefixes
         // like "Q5" or "1." from question numbers.
         if (englishRunStart >= 3) {
-          const prefixNoise = scored.slice(0, englishRunStart).filter((s) => !s.english).length;
+          const prefixNoise = scored
+            .slice(0, englishRunStart)
+            .filter((s) => !s.english).length;
           const prefixTotal = englishRunStart;
           // If the prefix is mostly noise (> 50%), strip it
           if (prefixNoise / prefixTotal > 0.5) {
-            const cleaned = words.slice(englishRunStart).join(" ").replace(/\s+/g, " ").trim();
+            const cleaned = words
+              .slice(englishRunStart)
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .trim();
             if (cleaned.length >= 20) return cleaned;
           }
         }
@@ -1078,16 +1906,230 @@ function stripRomanizedHindiNoise(value: string): string {
   return value;
 }
 
+async function loadRuntimePublicPyqRows(): Promise<OfficialRow[]> {
+  const dataset = await loadRuntimeArrayDataset<RuntimePublicPyqCard>(
+    "public-pyqs",
+    "cards",
+    join(process.cwd(), "data", "app", "public-pyqs.json"),
+    "public PYQs",
+  );
+  const cards = Array.isArray((dataset as { cards?: unknown }).cards)
+    ? (dataset as { cards: RuntimePublicPyqCard[] }).cards
+    : [];
+
+  return cards
+    .map(runtimePublicPyqCardToOfficialRow)
+    .filter((row): row is OfficialRow => Boolean(row));
+}
+
+function runtimePublicPyqCardToOfficialRow(
+  card: RuntimePublicPyqCard,
+): OfficialRow | null {
+  const id = cleanText(card.id || "");
+  const question = cleanText(card.question || "");
+  const subjectKey = getSubjectKeyFromValue(
+    card.subjectKey || card.category || card.paper || "",
+  );
+  if (!id || !question || !subjectKey) return null;
+
+  const category = cleanText(
+    card.category || getSubjectDefinition(subjectKey).label,
+  );
+  const paper = cleanText(
+    card.paper || getSubjectDefinition(subjectKey).paperLabel,
+  );
+  const syllabusTags = uniqueClean(card.syllabusTags || []);
+  const keywords = uniqueClean([...(card.keywords || []), category]);
+
+  const workspaceQuestion: OfficialWorkspaceQuestion = {
+    id,
+    question,
+    paper,
+    category,
+    subjectKey,
+    subjectLabel: category,
+    estimatedYear:
+      typeof card.estimatedYear === "number" ? card.estimatedYear : null,
+    marks:
+      typeof card.marks === "number"
+        ? card.marks
+        : inferMarksFromQuestion(question),
+    syllabusNodeId: "",
+    syllabusPath: syllabusTags,
+    linkedInsights: (card.linkedInsights || [])
+      .map(runtimePublicPyqInsightToWorkspaceCopy)
+      .filter((copy): copy is OfficialWorkspaceCopy => Boolean(copy)),
+    topperCount: card.linkedInsights?.length || 0,
+    searchText: [
+      question,
+      paper,
+      category,
+      syllabusTags.join(" "),
+      keywords.join(" "),
+    ].join(" "),
+  };
+
+  return {
+    id,
+    subjectKey,
+    question,
+    paper,
+    category,
+    year: workspaceQuestion.estimatedYear,
+    marks: workspaceQuestion.marks,
+    syllabusTags,
+    keywords,
+    sourceQuestionId: id,
+    sourceKind: "runtime-public-pyq",
+    workspaceQuestion,
+  };
+}
+
+function runtimePublicPyqInsightToWorkspaceCopy(
+  insight: RuntimePublicPyqInsight,
+): OfficialWorkspaceCopy | null {
+  const answerId = cleanText(insight.answerId || "");
+  if (!answerId) return null;
+
+  const summary = cleanText(insight.interpretation || insight.summary || "");
+  const sourceAvailable = Boolean(insight.sourceAvailable);
+  const pageHint =
+    typeof insight.pageHint === "number" ? insight.pageHint : null;
+
+  return {
+    answerId,
+    topperName: insight.topperName || null,
+    rank: typeof insight.rank === "number" ? insight.rank : null,
+    year: typeof insight.year === "number" ? insight.year : null,
+    institute: insight.institute || null,
+    marks: insight.marks == null ? null : String(insight.marks),
+    pageHint,
+    pageStatus: insight.pageStatus || (pageHint ? "valid" : "missing"),
+    sourceAvailable,
+    sourceStatus:
+      insight.sourceStatus || (sourceAvailable ? "available" : "not_uploaded"),
+    summary,
+    summaryAvailable: insight.summaryStatus
+      ? insight.summaryStatus === "available"
+      : Boolean(summary),
+    summarySource: null,
+  };
+}
+
+function inferMarksFromQuestion(question: string) {
+  const match = question.match(/\b(10|15|20|25|30|60)\s*marks?\b/i);
+  return match ? Number(match[1]) : null;
+}
+
 function loadWorkspaceSnapshot(): WorkspaceSnapshot {
   if (cachedWorkspaceSnapshot) return cachedWorkspaceSnapshot;
 
   try {
-    cachedWorkspaceSnapshot = JSON.parse(readFileSync(WORKSPACE_INDEX_FILE, "utf-8")) as WorkspaceSnapshot;
+    cachedWorkspaceSnapshot = JSON.parse(
+      readFileSync(WORKSPACE_INDEX_FILE, "utf-8"),
+    ) as WorkspaceSnapshot;
   } catch {
     cachedWorkspaceSnapshot = { questions: [] };
   }
 
   return cachedWorkspaceSnapshot;
+}
+
+async function loadRuntimeRecordDataset<T>(
+  datasetKey: string,
+  property: string,
+  localPath: string,
+  label: string,
+) {
+  const sharded = await loadShardedRuntimeDataset<Record<string, T>>(
+    datasetKey,
+    property,
+    label,
+  );
+  if (sharded) return sharded;
+
+  const local = await loadRuntimeJson<Record<string, unknown>>({
+    key: `${datasetKey}.json`,
+    localPath,
+    label,
+  });
+  if (!local.ok) return { [property]: {} };
+  return local.value;
+}
+
+async function loadRuntimeArrayDataset<T>(
+  datasetKey: string,
+  property: string,
+  localPath: string,
+  label: string,
+) {
+  const sharded = await loadShardedRuntimeDataset<T[]>(
+    datasetKey,
+    property,
+    label,
+  );
+  if (sharded) return sharded;
+
+  const local = await loadRuntimeJson<Record<string, unknown>>({
+    key: `${datasetKey}.json`,
+    localPath,
+    label,
+  });
+  if (!local.ok) return { [property]: [] };
+  return local.value;
+}
+
+async function loadShardedRuntimeDataset<TCollection>(
+  datasetKey: string,
+  property: string,
+  label: string,
+) {
+  const manifestResult = await loadRuntimeJson<RuntimeDataManifest>({
+    key: "manifest.json",
+    localPath: RUNTIME_DATA_MANIFEST_FILE,
+    label: "runtime data manifest",
+  });
+  if (!manifestResult.ok) return null;
+
+  const shards = manifestResult.value.datasets?.[datasetKey]?.shards || [];
+  if (!shards.length) return null;
+
+  const metadataResult = await loadRuntimeJson<Record<string, unknown>>({
+    key: `${datasetKey}/metadata.json`,
+    localPath: join(RUNTIME_DATA_DIR, datasetKey, "metadata.json"),
+    label: `${label} metadata`,
+  });
+  const dataset: Record<string, unknown> = metadataResult.ok
+    ? { ...metadataResult.value }
+    : {};
+
+  if (property === "links") {
+    const links: Record<string, TCollection> = {};
+    for (const shard of shards) {
+      const result = await loadRuntimeJson<Record<string, TCollection>>({
+        key: shard.file,
+        localPath: join(RUNTIME_DATA_DIR, shard.file),
+        label: `${label} shard ${shard.file}`,
+      });
+      if (!result.ok) return null;
+      Object.assign(links, result.value);
+    }
+    dataset[property] = links;
+    return dataset;
+  }
+
+  const items: unknown[] = [];
+  for (const shard of shards) {
+    const result = await loadRuntimeJson<unknown[]>({
+      key: shard.file,
+      localPath: join(RUNTIME_DATA_DIR, shard.file),
+      label: `${label} shard ${shard.file}`,
+    });
+    if (!result.ok) return null;
+    items.push(...result.value);
+  }
+  dataset[property] = items;
+  return dataset;
 }
 
 function searchableText(row: OfficialRow) {
@@ -1098,7 +2140,9 @@ function searchableText(row: OfficialRow) {
     row.year,
     row.syllabusTags.join(" "),
     row.keywords.join(" "),
-  ].join(" ").toLowerCase();
+  ]
+    .join(" ")
+    .toLowerCase();
 }
 
 function searchableTokens(row: OfficialRow) {
@@ -1127,7 +2171,11 @@ function defaultOfficialTopicMatchRank(): OfficialTopicMatchRank {
   };
 }
 
-function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): OfficialRowSearchRank {
+function rankOfficialRow(
+  row: OfficialRow,
+  terms: string[],
+  query = "",
+): OfficialRowSearchRank {
   if (terms.length === 0) return defaultOfficialRowRank();
 
   const haystack = searchableText(row);
@@ -1149,22 +2197,27 @@ function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): Officia
     }
 
     baseScore += bestTokenMatchScore(term, tokens);
-    if (matchesSearchTerm(term, questionHaystack, questionTokens)) questionTermHits += 1;
-    if (matchesSearchTerm(term, syllabusHaystack, syllabusTokens)) syllabusTermHits += 1;
-    if (matchesSearchTerm(term, keywordHaystack, keywordTokens)) keywordTermHits += 1;
+    if (matchesSearchTerm(term, questionHaystack, questionTokens))
+      questionTermHits += 1;
+    if (matchesSearchTerm(term, syllabusHaystack, syllabusTokens))
+      syllabusTermHits += 1;
+    if (matchesSearchTerm(term, keywordHaystack, keywordTokens))
+      keywordTermHits += 1;
   }
 
   const normalizedQuery = normalizeSearchText(query);
-  const exactQuestionPhraseHit = Boolean(normalizedQuery) && questionHaystack.includes(normalizedQuery);
+  const exactQuestionPhraseHit =
+    Boolean(normalizedQuery) && questionHaystack.includes(normalizedQuery);
   const allTermsInQuestion = questionTermHits === terms.length;
 
   return {
-    score: baseScore / terms.length
-      + (exactQuestionPhraseHit ? 1.4 : 0)
-      + (allTermsInQuestion ? 0.9 : 0)
-      + (questionTermHits / terms.length) * 0.75
-      + (syllabusTermHits / terms.length) * 0.18
-      + (keywordTermHits / terms.length) * 0.08,
+    score:
+      baseScore / terms.length +
+      (exactQuestionPhraseHit ? 1.4 : 0) +
+      (allTermsInQuestion ? 0.9 : 0) +
+      (questionTermHits / terms.length) * 0.75 +
+      (syllabusTermHits / terms.length) * 0.18 +
+      (keywordTermHits / terms.length) * 0.08,
     exactQuestionPhraseHit,
     allTermsInQuestion,
     questionTermHits,
@@ -1173,17 +2226,22 @@ function rankOfficialRow(row: OfficialRow, terms: string[], query = ""): Officia
   };
 }
 
-function rankOfficialTopicMatch(row: OfficialRow, syllabus = ""): OfficialTopicMatchRank {
+function rankOfficialTopicMatch(
+  row: OfficialRow,
+  syllabus = "",
+): OfficialTopicMatchRank {
   const normalizedSyllabus = normalizeSearchText(syllabus);
   const meaningfulTerms = meaningfulTopicTerms(syllabus);
-  if (!normalizedSyllabus && meaningfulTerms.length === 0) return defaultOfficialTopicMatchRank();
+  if (!normalizedSyllabus && meaningfulTerms.length === 0)
+    return defaultOfficialTopicMatchRank();
 
   const topicFields = [...row.syllabusTags, ...row.keywords]
     .map((value) => normalizeSearchText(value))
     .filter(Boolean);
   const topicFieldTermSet = new Set(
-    [...row.syllabusTags, ...row.keywords]
-      .flatMap((value) => meaningfulTopicTerms(value)),
+    [...row.syllabusTags, ...row.keywords].flatMap((value) =>
+      meaningfulTopicTerms(value),
+    ),
   );
 
   if (!topicFields.length) {
@@ -1197,11 +2255,17 @@ function rankOfficialTopicMatch(row: OfficialRow, syllabus = ""): OfficialTopicM
     };
   }
 
-  const exactPhraseHit = Boolean(normalizedSyllabus) && topicFields.some((value) => value.includes(normalizedSyllabus));
-  const matchedTerms = meaningfulTerms.filter((term) => topicFieldTermSet.has(term));
+  const exactPhraseHit =
+    Boolean(normalizedSyllabus) &&
+    topicFields.some((value) => value.includes(normalizedSyllabus));
+  const matchedTerms = meaningfulTerms.filter((term) =>
+    topicFieldTermSet.has(term),
+  );
   const matchedTermCount = matchedTerms.length;
-  const allTermsMatched = meaningfulTerms.length > 0 && matchedTermCount === meaningfulTerms.length;
-  const coverage = meaningfulTerms.length > 0 ? matchedTermCount / meaningfulTerms.length : 0;
+  const allTermsMatched =
+    meaningfulTerms.length > 0 && matchedTermCount === meaningfulTerms.length;
+  const coverage =
+    meaningfulTerms.length > 0 ? matchedTermCount / meaningfulTerms.length : 0;
 
   return {
     hasFilter: true,
@@ -1223,30 +2287,48 @@ function compareOfficialRowSearchResults(
   left: { row: OfficialRow; rank: OfficialRowSearchRank },
   right: { row: OfficialRow; rank: OfficialRowSearchRank },
 ) {
-  return compareOfficialRowSearchPriority(left, right)
-    || (right.row.year || 0) - (left.row.year || 0);
+  return (
+    compareOfficialRowSearchPriority(left, right) ||
+    (right.row.year || 0) - (left.row.year || 0)
+  );
 }
 
 function compareOfficialRowSearchPriority(
   left: { row: OfficialRow; rank: OfficialRowSearchRank },
   right: { row: OfficialRow; rank: OfficialRowSearchRank },
 ) {
-  return Number(right.rank.exactQuestionPhraseHit) - Number(left.rank.exactQuestionPhraseHit)
-    || Number(right.rank.allTermsInQuestion) - Number(left.rank.allTermsInQuestion)
-    || right.rank.questionTermHits - left.rank.questionTermHits
-    || right.rank.score - left.rank.score;
+  return (
+    Number(right.rank.exactQuestionPhraseHit) -
+      Number(left.rank.exactQuestionPhraseHit) ||
+    Number(right.rank.allTermsInQuestion) -
+      Number(left.rank.allTermsInQuestion) ||
+    right.rank.questionTermHits - left.rank.questionTermHits ||
+    right.rank.score - left.rank.score
+  );
 }
 
 function compareOfficialTopicFilteredResults(
-  left: { row: OfficialRow; rank: OfficialRowSearchRank; topicRank: OfficialTopicMatchRank },
-  right: { row: OfficialRow; rank: OfficialRowSearchRank; topicRank: OfficialTopicMatchRank },
+  left: {
+    row: OfficialRow;
+    rank: OfficialRowSearchRank;
+    topicRank: OfficialTopicMatchRank;
+  },
+  right: {
+    row: OfficialRow;
+    rank: OfficialRowSearchRank;
+    topicRank: OfficialTopicMatchRank;
+  },
 ) {
-  return compareOfficialRowSearchPriority(left, right)
-    || Number(right.topicRank.exactPhraseHit) - Number(left.topicRank.exactPhraseHit)
-    || Number(right.topicRank.allTermsMatched) - Number(left.topicRank.allTermsMatched)
-    || right.topicRank.matchedTermCount - left.topicRank.matchedTermCount
-    || right.topicRank.score - left.topicRank.score
-    || (right.row.year || 0) - (left.row.year || 0);
+  return (
+    compareOfficialRowSearchPriority(left, right) ||
+    Number(right.topicRank.exactPhraseHit) -
+      Number(left.topicRank.exactPhraseHit) ||
+    Number(right.topicRank.allTermsMatched) -
+      Number(left.topicRank.allTermsMatched) ||
+    right.topicRank.matchedTermCount - left.topicRank.matchedTermCount ||
+    right.topicRank.score - left.topicRank.score ||
+    (right.row.year || 0) - (left.row.year || 0)
+  );
 }
 
 function meaningfulTopicTerms(value: string) {
@@ -1271,7 +2353,8 @@ function isOptionalOfficialQuestionText(value: string) {
   const clean = cleanText(value);
   if (!clean) return false;
   if (clean.length < 28 || clean.length > 700) return false;
-  if (/^(?:na|not mentioned|no diagram|none|null|page\s*\d+|\d+)$/i.test(clean)) return false;
+  if (/^(?:na|not mentioned|no diagram|none|null|page\s*\d+|\d+)$/i.test(clean))
+    return false;
 
   const alphaCount = (clean.match(/[a-z]/gi) || []).length;
   if (alphaCount < 20) return false;
@@ -1280,16 +2363,27 @@ function isOptionalOfficialQuestionText(value: string) {
   const tokenList = searchTokens(normalized);
   if (tokenList.length < 4) return false;
 
-  const hasQuestionMarker = /^\s*["'“”]?\s*(?:q(?:uestion)?\.?\s*)?\d{1,2}\s*[a-e]?\s*[.)\]:-]/i.test(clean)
-    || /^\s*["'“”]?\s*q(?:uestion)?\.?\s*\d{1,2}/i.test(clean);
-  const hasMarks = /\b(?:10|15|20|25|30|60)\s*marks?\b/i.test(clean) || /\((?:10|15|20|25|30|60)\s*m(?:arks?)?\)/i.test(clean);
-  const hasDirective = tokenList.some((token) => OPTIONAL_QUESTION_DIRECTIVES.has(token));
+  const hasQuestionMarker =
+    /^\s*["'“”]?\s*(?:q(?:uestion)?\.?\s*)?\d{1,2}\s*[a-e]?\s*[.)\]:-]/i.test(
+      clean,
+    ) || /^\s*["'“”]?\s*q(?:uestion)?\.?\s*\d{1,2}/i.test(clean);
+  const hasMarks =
+    /\b(?:10|15|20|25|30|60)\s*marks?\b/i.test(clean) ||
+    /\((?:10|15|20|25|30|60)\s*m(?:arks?)?\)/i.test(clean);
+  const hasDirective = tokenList.some((token) =>
+    OPTIONAL_QUESTION_DIRECTIVES.has(token),
+  );
 
   if (!hasQuestionMarker && !hasMarks && !hasDirective) return false;
 
   // Reject answer-note fragments that happen to contain a directive word but are
   // not framed as a PYQ demand.
-  if (!hasQuestionMarker && !hasMarks && /^[a-z][a-z\s]{0,60}(?:->|:)/i.test(clean)) return false;
+  if (
+    !hasQuestionMarker &&
+    !hasMarks &&
+    /^[a-z][a-z\s]{0,60}(?:->|:)/i.test(clean)
+  )
+    return false;
 
   return true;
 }
@@ -1297,7 +2391,10 @@ function isOptionalOfficialQuestionText(value: string) {
 function normalizeOfficialQuestionFingerprint(value: string) {
   return cleanText(value)
     .toLowerCase()
-    .replace(/^\s*["'“”]?\s*q(?:uestion)?\.?\s*\d{0,2}\s*[a-e]?\s*[.)\]:-]?\s*/i, "")
+    .replace(
+      /^\s*["'“”]?\s*q(?:uestion)?\.?\s*\d{0,2}\s*[a-e]?\s*[.)\]:-]?\s*/i,
+      "",
+    )
     .replace(/^\s*["'“”]?\s*\d{1,2}\s*[a-e]?\s*[.)\]:-]\s*/i, "")
     .replace(/\([^)]*\b\d{1,3}\s*marks?[^)]*\)/gi, "")
     .replace(/\b\d{1,3}\s*marks?\b/gi, "")
@@ -1316,13 +2413,21 @@ function shortStableHash(value: string) {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function extractMatchedEssayPrompt(officialPrompt: string, extractedQuestion: string) {
+function extractMatchedEssayPrompt(
+  officialPrompt: string,
+  extractedQuestion: string,
+) {
   const officialNormalized = normalizeEssayPromptForMatch(officialPrompt);
   if (!officialNormalized) return "";
 
   const prompts = extractEssayPromptSegments(extractedQuestion);
   for (const prompt of prompts) {
-    if (isNearExactEssayPrompt(officialNormalized, normalizeEssayPromptForMatch(prompt))) {
+    if (
+      isNearExactEssayPrompt(
+        officialNormalized,
+        normalizeEssayPromptForMatch(prompt),
+      )
+    ) {
       return cleanEssayPromptSegment(prompt);
     }
   }
@@ -1344,7 +2449,10 @@ function extractEssayPromptSegments(value: string) {
       const match = matches[index];
       let start = (match.index || 0) + match[0].length;
       while (start < clean.length && /[\s.):-]/.test(clean[start])) start += 1;
-      const end = index + 1 < matches.length ? (matches[index + 1].index || clean.length) : clean.length;
+      const end =
+        index + 1 < matches.length
+          ? matches[index + 1].index || clean.length
+          : clean.length;
       const prompt = cleanEssayPromptSegment(clean.slice(start, end));
       if (isEssayInstructionSegment(prompt)) continue;
       if (prompt) prompts.push(prompt);
@@ -1355,7 +2463,10 @@ function extractEssayPromptSegments(value: string) {
   return uniqueClean(prompts);
 }
 
-function isNearExactEssayPrompt(officialNormalized: string, candidateNormalized: string) {
+function isNearExactEssayPrompt(
+  officialNormalized: string,
+  candidateNormalized: string,
+) {
   if (!officialNormalized || !candidateNormalized) return false;
   if (officialNormalized === candidateNormalized) return true;
 
@@ -1363,11 +2474,16 @@ function isNearExactEssayPrompt(officialNormalized: string, candidateNormalized:
   const candidateTokens = essayPromptTokensForMatch(candidateNormalized);
   if (!officialTokens.length || !candidateTokens.length) return false;
 
-  const shared = officialTokens.filter((token) => candidateTokens.includes(token));
+  const shared = officialTokens.filter((token) =>
+    candidateTokens.includes(token),
+  );
   const coverage = shared.length / Math.max(1, officialTokens.length);
-  const jaccard = shared.length / Math.max(1, new Set([...officialTokens, ...candidateTokens]).size);
-  const lengthRatio = Math.min(officialNormalized.length, candidateNormalized.length)
-    / Math.max(officialNormalized.length, candidateNormalized.length);
+  const jaccard =
+    shared.length /
+    Math.max(1, new Set([...officialTokens, ...candidateTokens]).size);
+  const lengthRatio =
+    Math.min(officialNormalized.length, candidateNormalized.length) /
+    Math.max(officialNormalized.length, candidateNormalized.length);
 
   if (officialTokens.length <= 2) {
     return coverage === 1 && jaccard >= 0.8 && lengthRatio >= 0.72;
@@ -1419,7 +2535,12 @@ function toYear(value: string) {
 }
 
 function slug(value: string) {
-  return cleanText(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "q";
+  return (
+    cleanText(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "q"
+  );
 }
 
 export const __testUtils = {

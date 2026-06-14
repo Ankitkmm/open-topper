@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import type { NextRequest } from "next/server";
-import { hasDatabaseUrl } from "./env";
+import { hasDatabaseUrl, isCloudflareTarget } from "./env";
 
 type Bucket = {
   count: number;
@@ -12,7 +12,7 @@ const buckets = new Map<string, Bucket>();
 let rateLimitTableReady = false;
 
 export async function checkRateLimit(req: NextRequest, options: { scope: string; max: number; windowMs: number }) {
-  if (hasDatabaseUrl() && !isCloudflareRuntime()) {
+  if (hasDatabaseUrl() && !isWorkerRuntime()) {
     try {
       return await checkDatabaseRateLimit(req, options);
     } catch (error) {
@@ -93,18 +93,19 @@ async function ensureRateLimitTable() {
   rateLimitTableReady = true;
 }
 
-function isCloudflareRuntime() {
-  return process.env["NEXT_RUNTIME"] === "edge"
+function isWorkerRuntime() {
+  return isCloudflareTarget()
+    || process.env["NEXT_RUNTIME"] === "edge"
     || process.env["CF_PAGES"] === "1"
     || Boolean(process.env["CF_WORKER_NAME"]);
 }
 
 function clientIdentity(req: NextRequest) {
-  const ua = req.headers.get("user-agent")?.trim() || "unknown";
   const trustedProxy = process.env.VERCEL === "1" || process.env.TRUST_PROXY_HEADERS === "true";
+  const cloudflareIp = trustedProxy ? req.headers.get("cf-connecting-ip")?.trim() : "";
   const forwarded = trustedProxy ? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : "";
   const realIp = trustedProxy ? req.headers.get("x-real-ip")?.trim() : "";
-  return [forwarded || realIp || "local", ua.slice(0, 120)].join("|");
+  return cloudflareIp || forwarded || realIp || "local";
 }
 
 function hashedClientIdentity(req: NextRequest) {
@@ -114,4 +115,5 @@ function hashedClientIdentity(req: NextRequest) {
 export const __testUtils = {
   clientIdentity,
   hashedClientIdentity,
+  isWorkerRuntime,
 };

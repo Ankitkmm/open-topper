@@ -9,6 +9,7 @@ import {
   getPdfTokenSecret,
   getPdfTokenTtlSeconds,
   getPdfUpstreamTimeoutMs,
+  isCloudflareTarget,
   isProductionLikeRuntime,
   parsePositiveInteger,
 } from "../env";
@@ -32,7 +33,8 @@ import {
   issuePdfAccessToken,
   verifyPdfAccessToken,
 } from "../pdf-access";
-import { readBoundedJson, rejectLargeBody } from "../request-guards";
+import { readBoundedJson, rejectLargeBody, requireSameOriginRead } from "../request-guards";
+import { __testUtils as rateLimitTestUtils } from "../rate-limit";
 
 const VALID_ANSWER_ID = "ans_a62f8f3a22e0ffcb";
 const VALID_R2_URL = "https://pub-3476e7cc4efd44b58da659c67aad1348.r2.dev/drive_1wUYc24i2uslT_x0o5LBpG9lK6dSX7o-5.pdf";
@@ -56,6 +58,10 @@ const ENV_KEYS = [
   "PDF_TOKEN_TTL_SECONDS",
   "PDF_UPSTREAM_TIMEOUT_MS",
   "RATE_LIMIT_ANSWER_SOURCE_MAX",
+  "UPSCAT_RUNTIME_TARGET",
+  "CF_PAGES",
+  "CF_WORKER_NAME",
+  "NEXT_RUNTIME",
 ] as const;
 
 function withEnv<T>(patch: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>>, run: () => T) {
@@ -230,6 +236,24 @@ test("temporary QA auth disable cannot force production auth off", () => {
   });
 });
 
+test("explicit Cloudflare target disables direct database rate limiting", () => {
+  withEnv({
+    UPSCAT_RUNTIME_TARGET: "cloudflare",
+  }, () => {
+    assert.equal(isCloudflareTarget(), true);
+    assert.equal(rateLimitTestUtils.isWorkerRuntime(), true);
+  });
+
+  withEnv({
+    UPSCAT_RUNTIME_TARGET: undefined,
+    CF_PAGES: undefined,
+    CF_WORKER_NAME: undefined,
+    NEXT_RUNTIME: undefined,
+  }, () => {
+    assert.equal(isCloudflareTarget(), false);
+  });
+});
+
 test("numeric env parsing rejects partial numbers and caps sensitive limits", () => {
   assert.equal(parsePositiveInteger("10abc", 60), 60);
   assert.equal(parsePositiveInteger("1e9", 60), 60);
@@ -372,6 +396,41 @@ test("same-origin request guard combines Origin/Referer with Fetch Metadata", ()
     })),
     true,
   );
+});
+
+test("same-origin read guard requires browser same-origin signals for public JSON GETs", async () => {
+  assert.equal(
+    requireSameOriginRead(new NextRequest("https://upscat.local/api/search?q=polity", {
+      method: "GET",
+      headers: { referer: "https://upscat.local/browse" },
+    })),
+    null,
+  );
+
+  assert.equal(
+    requireSameOriginRead(new NextRequest("https://upscat.local/api/search?q=polity", {
+      method: "GET",
+      headers: { "sec-fetch-site": "same-origin" },
+    })),
+    null,
+  );
+
+  const blocked = requireSameOriginRead(new NextRequest("https://upscat.local/api/search?q=polity", {
+    method: "GET",
+  }));
+  assert.ok(blocked instanceof Response);
+  assert.equal(blocked.status, 403);
+  assert.deepEqual(await blocked.json(), { error: "Same-origin browser requests are required." });
+
+  const crossSite = requireSameOriginRead(new NextRequest("https://upscat.local/api/search?q=polity", {
+    method: "GET",
+    headers: {
+      origin: "https://evil.example",
+      "sec-fetch-site": "cross-site",
+    },
+  }));
+  assert.ok(crossSite instanceof Response);
+  assert.equal(crossSite.status, 403);
 });
 
 test("R2 PDF URL validation only allows HTTPS PDF objects on expected R2 hosts", () => {

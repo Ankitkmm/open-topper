@@ -46,6 +46,14 @@ export function hasDatabaseUrl() {
   return Boolean(getEnv("DATABASE_URL"));
 }
 
+export function getRuntimeTarget() {
+  return getEnv("UPSCAT_RUNTIME_TARGET").toLowerCase();
+}
+
+export function isCloudflareTarget() {
+  return getRuntimeTarget() === "cloudflare";
+}
+
 export function getDatabaseUrl() {
   return getEnv("DATABASE_URL");
 }

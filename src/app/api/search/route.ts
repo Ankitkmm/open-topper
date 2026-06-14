@@ -1,18 +1,18 @@
 import { NextRequest } from "next/server";
 import { getRateLimitWindowMs, getSearchRateLimitMax } from "@/lib/env";
 import {
-  getOfficialBrowsePyqs,
-  getOfficialQuestionShell,
-  getOfficialSubjectPyqShells,
+  getOfficialBrowsePyqsAsync,
+  getOfficialQuestionShellAsync,
+  getOfficialSubjectPyqShellsAsync,
 } from "@/lib/official-pyqs";
 import {
-  getWorkspaceNode,
-  getWorkspaceQuestionById,
-  searchWorkspaceQuestions,
+  getWorkspaceNodeAsync,
+  getWorkspaceQuestionByIdAsync,
+  searchWorkspaceQuestionsAsync,
   toWorkspaceQuestionShell,
 } from "@/lib/question-bank-runtime";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { boundedParam } from "@/lib/request-guards";
+import { boundedParam, requireSameOriginRead } from "@/lib/request-guards";
 import { getSubjectKeyFromValue, type SubjectKey } from "@/lib/subject-definitions";
 
 const PRIVATE_SEARCH_HEADERS = {
@@ -20,9 +20,12 @@ const PRIVATE_SEARCH_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet, noimageindex",
 };
 const DEFAULT_SEARCH_LIMIT = 40;
-const MAX_SEARCH_LIMIT = 1000;
+const MAX_SEARCH_LIMIT = 120;
 
 export async function GET(req: NextRequest) {
+  const sameOriginError = requireSameOriginRead(req, PRIVATE_SEARCH_HEADERS);
+  if (sameOriginError) return sameOriginError;
+
   const limitState = await checkRateLimit(req, {
     scope: "search",
     max: getSearchRateLimitMax(),
@@ -81,18 +84,18 @@ async function searchOfficialShells(options: {
   limit: number;
 }) {
   if (options.questionId.trim()) {
-    const shell = getOfficialQuestionShell(options.questionId.trim());
+    const shell = await getOfficialQuestionShellAsync(options.questionId.trim());
     return shell ? [shell] : [];
   }
 
   const category = options.subjectKey || options.subject.trim().toLowerCase();
-  const syllabus = resolveOfficialSyllabusFilter(options.subjectKey, options.syllabusId);
+  const syllabus = await resolveOfficialSyllabusFilter(options.subjectKey, options.syllabusId);
 
   if (options.subjectKey) {
-    return getOfficialSubjectPyqShells(options.subjectKey, options.query, options.limit, syllabus);
+    return getOfficialSubjectPyqShellsAsync(options.subjectKey, options.query, options.limit, syllabus);
   }
 
-  return getOfficialBrowsePyqs(options.query, category, "", options.limit);
+  return getOfficialBrowsePyqsAsync(options.query, category, "", options.limit);
 }
 
 async function searchWorkspaceShells(options: {
@@ -103,11 +106,11 @@ async function searchWorkspaceShells(options: {
   limit: number;
 }) {
   if (options.questionId.trim()) {
-    const shell = getWorkspaceQuestionById(options.questionId.trim());
+    const shell = await getWorkspaceQuestionByIdAsync(options.questionId.trim());
     return shell ? [toWorkspaceQuestionShell(shell)] : [];
   }
 
-  const questions = searchWorkspaceQuestions({
+  const questions = await searchWorkspaceQuestionsAsync({
     query: options.query,
     subjectKey: options.subjectKey,
     syllabusNodeId: options.syllabusId,
@@ -117,12 +120,12 @@ async function searchWorkspaceShells(options: {
   return questions.map(toWorkspaceQuestionShell);
 }
 
-function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {
+async function resolveOfficialSyllabusFilter(subjectKey: SubjectKey | null, syllabusId: string) {
   const value = syllabusId.trim();
   if (!value) return "";
   if (!subjectKey) return value;
 
-  const node = getWorkspaceNode(value);
+  const node = await getWorkspaceNodeAsync(value);
   if (!node || node.subjectKey !== subjectKey) return value;
   return node.label || value;
 }

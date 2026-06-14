@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { loadRuntimeJson } from "./runtime-data";
 import { PUBLIC_TOPPER_NAME_FALLBACK, normalizePublicTopperName } from "./public-records";
 import { bestTokenMatchScore, matchesSearchTerm, searchTerms, searchTokens } from "./search-text";
 import { type SubjectKey, getSubjectDefinition, getSubjectDefinitions } from "./subject-definitions";
@@ -72,10 +73,19 @@ interface WorkspaceSnapshot {
   syllabusNodes: WorkspaceSyllabusNode[];
 }
 
+interface RuntimeDataManifest {
+  datasets?: Record<string, {
+    shards?: Array<{ file: string; key: string; count: number }>;
+  }>;
+}
+
 const WORKSPACE_INDEX_FILE = join(process.cwd(), "data", "app", "workspace-index.json");
+const RUNTIME_DATA_MANIFEST_FILE = join(process.cwd(), ".cloudflare-runtime-data", "manifest.json");
+const RUNTIME_DATA_DIR = join(process.cwd(), ".cloudflare-runtime-data");
 const QUESTION_SEARCH_TOKEN_CACHE = new Map<string, string[]>();
 
 let cachedIndex: WorkspaceIndex | null = null;
+let cachedIndexPromise: Promise<WorkspaceIndex> | null = null;
 
 export function __setWorkspaceIndexForTests(snapshot: WorkspaceSnapshot | null) {
   QUESTION_SEARCH_TOKEN_CACHE.clear();
@@ -86,12 +96,24 @@ export function getWorkspaceIndex() {
   if (cachedIndex) return cachedIndex;
 
   const snapshot = readJson<WorkspaceSnapshot | null>(WORKSPACE_INDEX_FILE, null);
-  cachedIndex = hydrateWorkspaceIndex(snapshot ?? {
-    generatedAt: "",
-    questions: [],
-    syllabusNodes: [],
-  });
+  cachedIndex = hydrateWorkspaceIndex(snapshot ?? emptyWorkspaceSnapshot());
   return cachedIndex;
+}
+
+export async function getWorkspaceIndexAsync() {
+  if (cachedIndex) return cachedIndex;
+  if (cachedIndexPromise) return cachedIndexPromise;
+
+  cachedIndexPromise = loadWorkspaceIndexAsync()
+    .then((index) => {
+      cachedIndex = index;
+      return index;
+    })
+    .finally(() => {
+      cachedIndexPromise = null;
+    });
+
+  return cachedIndexPromise;
 }
 
 export function getSubjectWorkspaceQuestions(subjectKey: SubjectKey, query = "", syllabusNodeId = "") {
@@ -199,6 +221,56 @@ export function toWorkspaceQuestionShell(question: WorkspaceQuestion): Workspace
   };
 }
 
+export async function getSubjectWorkspaceQuestionsAsync(subjectKey: SubjectKey, query = "", syllabusNodeId = "") {
+  const index = await getWorkspaceIndexAsync();
+  const questions = index.questionsBySubject.get(subjectKey) || [];
+  const terms = searchTerms(query);
+
+  return questions.filter((question) => {
+    if (syllabusNodeId && question.syllabusNodeId !== syllabusNodeId) return false;
+    if (!terms.length) return true;
+    return searchScore(question, terms) > 0;
+  });
+}
+
+export async function searchWorkspaceQuestionsAsync(options: {
+  query?: string;
+  subjectKey?: SubjectKey | "";
+  syllabusNodeId?: string;
+  limit?: number;
+}) {
+  const { query = "", subjectKey = "", syllabusNodeId = "", limit = 80 } = options;
+  const index = await getWorkspaceIndexAsync();
+  const subjects = subjectKey ? [subjectKey] : getSubjectDefinitions().map((definition) => definition.key);
+  const terms = searchTerms(query);
+
+  let matches = subjects.flatMap((key) => index.questionsBySubject.get(key) || []);
+  if (syllabusNodeId) matches = matches.filter((question) => question.syllabusNodeId === syllabusNodeId);
+
+  if (!terms.length) return matches.slice(0, limit);
+
+  return matches
+    .map((question) => ({ question, score: searchScore(question, terms) }))
+    .filter((entry) => entry.score > 0)
+    .sort(compareWorkspaceSearchEntries)
+    .slice(0, limit)
+    .map((entry) => entry.question);
+}
+
+export async function getWorkspaceSyllabusNodesAsync(subjectKey: SubjectKey) {
+  const nodes = (await getWorkspaceIndexAsync()).syllabusNodesBySubject.get(subjectKey) || [];
+  const primary = nodes.filter((node) => !node.isFallback);
+  return primary.length ? primary : nodes;
+}
+
+export async function getWorkspaceNodeAsync(nodeId: string) {
+  return (await getWorkspaceIndexAsync()).nodeById.get(nodeId) || null;
+}
+
+export async function getWorkspaceQuestionByIdAsync(questionId: string) {
+  return (await getWorkspaceIndexAsync()).questions.find((question) => question.id === questionId) || null;
+}
+
 export function getWorkspaceStats() {
   const index = getWorkspaceIndex();
   const categoryCounts = new Map<string, number>();
@@ -293,4 +365,110 @@ function questionSearchTokens(question: WorkspaceQuestion) {
   const tokens = searchTokens([question.question, question.searchText, question.syllabusPath.join(" ")].join(" "));
   QUESTION_SEARCH_TOKEN_CACHE.set(question.id, tokens);
   return tokens;
+}
+
+async function loadWorkspaceIndexAsync() {
+  const sharded = await loadShardedWorkspaceSnapshot();
+  if (sharded) return hydrateWorkspaceIndex(normalizeWorkspaceSnapshot(sharded));
+
+  const result = await loadRuntimeJson<WorkspaceSnapshot>({
+    key: "workspace-index.json",
+    localPath: WORKSPACE_INDEX_FILE,
+    label: "workspace-index",
+  });
+
+  if (result.ok) {
+    return hydrateWorkspaceIndex(normalizeWorkspaceSnapshot(result.value));
+  }
+
+  return hydrateWorkspaceIndex(emptyWorkspaceSnapshot());
+}
+
+async function loadShardedWorkspaceSnapshot(): Promise<WorkspaceSnapshot | null> {
+  const manifestResult = await loadRuntimeJson<RuntimeDataManifest>({
+    key: "manifest.json",
+    localPath: RUNTIME_DATA_MANIFEST_FILE,
+    label: "runtime data manifest",
+  });
+  if (!manifestResult.ok) return null;
+
+  const shards = manifestResult.value.datasets?.["workspace-index"]?.shards || [];
+  if (!shards.length) return null;
+
+  const metadataResult = await loadRuntimeJson<Partial<WorkspaceSnapshot>>({
+    key: "workspace-index/metadata.json",
+    localPath: join(RUNTIME_DATA_DIR, "workspace-index", "metadata.json"),
+    label: "workspace-index metadata",
+  });
+
+  const questions: WorkspaceQuestion[] = [];
+  for (const shard of shards) {
+    const result = await loadRuntimeJson<unknown>({
+      key: shard.file,
+      localPath: join(RUNTIME_DATA_DIR, shard.file),
+      label: `workspace-index shard ${shard.file}`,
+    });
+    if (!result.ok) return null;
+    questions.push(...extractQuestionsFromWorkspaceShard(result.value));
+  }
+
+  return {
+    generatedAt: metadataResult.ok && typeof metadataResult.value.generatedAt === "string"
+      ? metadataResult.value.generatedAt
+      : "",
+    questions,
+    syllabusNodes: metadataResult.ok && Array.isArray(metadataResult.value.syllabusNodes)
+      ? metadataResult.value.syllabusNodes
+      : [],
+  };
+}
+
+function normalizeWorkspaceSnapshot(snapshot: WorkspaceSnapshot | null | undefined): WorkspaceSnapshot {
+  if (!snapshot || typeof snapshot !== "object") return emptyWorkspaceSnapshot();
+
+  const normalizedQuestions = Array.isArray(snapshot.questions)
+    ? snapshot.questions
+    : loadQuestionsFromLegacyShardRecord(snapshot as unknown as Record<string, unknown>);
+  const normalizedNodes = Array.isArray(snapshot.syllabusNodes)
+    ? snapshot.syllabusNodes
+    : [];
+
+  return {
+    generatedAt: typeof snapshot.generatedAt === "string" ? snapshot.generatedAt : "",
+    questions: normalizedQuestions,
+    syllabusNodes: normalizedNodes,
+  };
+}
+
+function loadQuestionsFromLegacyShardRecord(snapshot: Record<string, unknown>) {
+  const questions = snapshot["questions"];
+  if (Array.isArray(questions)) return questions as WorkspaceQuestion[];
+
+  const maybeFirstShard = snapshot["0000"];
+  if (Array.isArray(maybeFirstShard)) return maybeFirstShard as WorkspaceQuestion[];
+
+  return [] as WorkspaceQuestion[];
+}
+
+function extractQuestionsFromWorkspaceShard(value: unknown): WorkspaceQuestion[] {
+  if (Array.isArray(value)) return value as WorkspaceQuestion[];
+  if (!value || typeof value !== "object") return [];
+
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record["questions"])) return record["questions"] as WorkspaceQuestion[];
+
+  const values = Object.values(record);
+  if (values.length && values.every((entry) => entry && typeof entry === "object" && !Array.isArray(entry))) {
+    return values as WorkspaceQuestion[];
+  }
+
+  return [];
+}
+
+function emptyWorkspaceSnapshot(): WorkspaceSnapshot {
+  return {
+    generatedAt: "",
+    questions: [],
+    syllabusNodes: [],
+  };
 }

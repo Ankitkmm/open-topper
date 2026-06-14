@@ -732,3 +732,53 @@ committed.
   completion, but do not point it at this Mac SQLite DB over network storage.
 - The per-shard logs may stay quiet for stretches; the tmux supervisor and SQLite manifest are the
   better progress signals.
+
+---
+
+Last updated: 2026-06-14 (no-signup API hardening live lane) · By: Codex
+
+## No-signup public API hardening prepared for production deploy
+
+### Summary
+
+Hardened the remaining public JSON read surfaces without enabling signup/auth. Search and question-detail APIs now require same-origin browser signals, search result caps were reduced to UI-sized limits, and API responses now declare same-origin CORP headers. Rate-limit identity was tightened to trusted client IP instead of IP+User-Agent.
+
+### Files changed
+
+- `src/lib/request-guards.ts` — added `requireSameOriginRead()` for browser-only GET JSON access.
+- `src/app/api/search/route.ts` — same-origin read guard + reduced `MAX_SEARCH_LIMIT` to 120 + async loader usage.
+- `src/app/api/official-questions/[questionId]/route.ts` — same-origin read guard + async loader usage.
+- `src/app/api/workspace-questions/[questionId]/route.ts` — same-origin read guard + async loader usage.
+- `src/lib/rate-limit.ts` — rate-limit identity now keys on trusted client IP only; worker/runtime detection retained.
+- `next.config.ts` — added `Cross-Origin-Resource-Policy: same-origin` to API headers.
+- `src/lib/__tests__/security-hardening.test.ts` — added same-origin read-guard and worker-runtime coverage.
+- `src/lib/env.ts`, `src/lib/official-pyqs.ts`, `src/lib/question-bank-runtime.ts` — synced async/runtime helpers needed by the hardened routes in this deployment lane.
+
+### Verification
+
+- `npm run lint -- src/app/api/search/route.ts src/app/api/official-questions/[questionId]/route.ts src/app/api/workspace-questions/[questionId]/route.ts src/lib/request-guards.ts src/lib/rate-limit.ts src/lib/__tests__/security-hardening.test.ts next.config.ts src/lib/env.ts src/lib/official-pyqs.ts src/lib/question-bank-runtime.ts` — pass.
+- `npx tsc --noEmit --pretty false` — pass.
+- `node --test --import tsx src/lib/__tests__/security-hardening.test.ts` — pass (15/15).
+
+### Decisions
+
+- Keep no-signup browsing, but require same-origin browser signals for public GET JSON APIs to raise scrape cost.
+- Match public search response caps to actual UI needs (120) instead of allowing oversized dumps.
+- Rate-limit identity should not include User-Agent because UA rotation multiplies quotas too cheaply.
+
+### Blockers
+
+- Shared edge/global rate limiting and WAF rules still require platform configuration outside the repo.
+
+### Deployment
+
+- Vercel production deploy succeeded: `dpl_BqQmAGRW7XtmyJVoQC7NiqBUVnZ1`.
+- Live canonical host verified: `https://www.upscat.click/` returns 200.
+- Direct/headerless `GET /api/search?q=test` returns 403 with `Same-origin browser requests are required.`
+- Same-origin browser-like `GET /api/search?q=test&limit=240` returns 200 and is capped to `limit: 120`.
+- Legacy `npm run smoke` page/PDF checks pass, but the script still expects direct `/api/search?q=test` to return 200; that one check now fails by design after this hardening.
+
+### Exact next step
+
+Update `scripts/smoke-test.js` so `/api/search` is tested with same-origin browser headers as 200 and direct/headerless `/api/search` is tested as 403.
+
