@@ -24,6 +24,15 @@ const OPTIONAL_SUBJECTS: SubjectKey[] = [
   "history",
 ];
 
+const OPTIONAL_SUBJECT_ICONS: Partial<Record<SubjectKey, string>> = {
+  geography: "🌍",
+  sociology: "👥",
+  psir: "🌐",
+  "public-administration": "🏢",
+  anthropology: "🧬",
+  history: "📜",
+};
+
 const EXAMPLE_QUERIES = [
   "federalism",
   "ethical dilemma",
@@ -213,16 +222,24 @@ export default async function LandingPage() {
 
         <div className="mt-5">
           <div className="overline mb-2">Optional subjects</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {OPTIONAL_SUBJECTS.map((key) => {
               const subject = getSubjectDefinition(key);
               return (
                 <Link
                   key={key}
                   href={subject.href}
-                  className="study-badge transition hover:border-[var(--accent-border)] hover:text-accent"
+                  className="pyq-card group flex min-h-24 items-center gap-4 p-4 transition-transform hover:-translate-y-0.5"
                 >
-                  {subject.label}
+                  <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-[var(--accent-soft)] text-[2rem] leading-none" aria-hidden="true">
+                    {OPTIONAL_SUBJECT_ICONS[key]}
+                  </span>
+                  <span className="min-w-0 flex-1 text-base font-semibold tracking-[-0.01em]">{subject.label}</span>
+                  <ArrowRight
+                    size={16}
+                    className="text-muted transition-transform group-hover:translate-x-1 group-hover:text-accent"
+                    aria-hidden="true"
+                  />
                 </Link>
               );
             })}

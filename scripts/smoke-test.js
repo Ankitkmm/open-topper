@@ -34,14 +34,14 @@ const PUBLIC_ROUTES = [
  */
 
 /**
- * Makes a fetch request with a 15-second timeout.
+ * Makes a fetch request with a 30-second timeout.
  * @param {string} url
  * @param {RequestInit} [options]
  * @returns {Promise<Response>}
  */
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     return res;
@@ -144,7 +144,7 @@ async function testSearchAPIDirectBlocked() {
  * @returns {Promise<TestResult>}
  */
 async function testSearchAPISameOriginAllowed() {
-  const route = '/api/search?q=test';
+  const route = '/api/search?q=test&limit=1';
   try {
     const res = await fetchWithTimeout(`${BASE_URL}${route}`, {
       headers: {

@@ -782,3 +782,40 @@ Hardened the remaining public JSON read surfaces without enabling signup/auth. S
 
 Update `scripts/smoke-test.js` so `/api/search` is tested with same-origin browser headers as 200 and direct/headerless `/api/search` is tested as 403.
 
+---
+
+Last updated: 2026-06-14 (landing optional cards restored after hardening deploy) · By: Codex
+
+## Landing optional cards restored on live hardening deployment
+
+### Summary
+
+The initial no-signup hardening deploy was built from an older clean lane and regressed the landing-page optional subject card hotfix back to small pills. Restored `src/app/page.tsx` from the current workspace into the hardening lane and redeployed the combined security + landing-card state.
+
+### Files changed
+
+- `src/app/page.tsx` — restored optional-subject card grid with larger icons and `min-h-24` card styling.
+- `scripts/smoke-test.js` — kept new direct `/api/search` 403 expectation and made same-origin search smoke lighter (`limit=1`) with a 30s timeout to avoid cold-start false negatives.
+
+### Verification
+
+- `npm run lint -- src/app/page.tsx` — pass.
+- `npx tsc --noEmit --pretty false` — pass.
+- Production deploy ready: `dpl_Djexg3HWjZmoAXQAuinkYbzTZ9m2`.
+- Live `https://www.upscat.click/` contains `pyq-card group flex min-h-24` and `text-[2rem]` optional-card markup.
+- Direct `/api/search?q=test` returns 403.
+- Same-origin `/api/search?q=test&limit=240` returns 200 and caps at 120.
+- `BASE_URL=https://www.upscat.click npm run smoke` — pass, 17/17.
+
+### Decisions
+
+- No new architectural decisions.
+
+### Blockers
+
+- None.
+
+### Exact next step
+
+If merging this hotfix branch, preserve both the hardening changes and the restored landing-page `src/app/page.tsx` card markup.
+
