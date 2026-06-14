@@ -147,7 +147,7 @@ test("vercel preview remains fail-open for known default R2 preview host validat
   });
 });
 
-test("temporary QA auth disable cannot force production auth off", () => {
+test("temporary public auth disable keeps production no-signup flows open by default", () => {
   withEnv({
     NODE_ENV: "development",
     VERCEL_ENV: undefined,
@@ -159,50 +159,32 @@ test("temporary QA auth disable cannot force production auth off", () => {
   }, () => {
     assert.equal(isAuthTemporarilyDisabledForQa(), true);
     assert.equal(isPublicAuthAvailable(), false);
-  });
-
-  withEnv({
-    NODE_ENV: "development",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "false",
-    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
-  }, () => {
-    assert.equal(isAuthTemporarilyDisabledForQa(), false);
-    assert.equal(isPublicAuthAvailable(), true);
+    assert.equal(getPublicAuthState().mode, "qa-disabled");
   });
 
   withEnv({
     NODE_ENV: "production",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "true",
-    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
-  }, () => {
-    assert.equal(isAuthTemporarilyDisabledForQa(), false);
-    assert.equal(isPublicAuthAvailable(), true);
-  });
-
-  withEnv({
-    NODE_ENV: "production",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "true",
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_VERCEL_ENV: "production",
+    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: undefined,
     NEXT_PUBLIC_SUPABASE_URL: undefined,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
     SUPABASE_URL: undefined,
     SUPABASE_ANON_KEY: undefined,
   }, () => {
-    assert.equal(isAuthTemporarilyDisabledForQa(), false);
+    assert.equal(isAuthTemporarilyDisabledForQa(), true);
     assert.equal(isPublicAuthAvailable(), false);
-    assert.equal(getPublicAuthState().mode, "misconfigured-production");
+    assert.equal(getPublicAuthState().mode, "qa-disabled");
   });
 
   withEnv({
     NODE_ENV: "production",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "true",
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_VERCEL_ENV: "production",
+    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "false",
     NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
-    SUPABASE_URL: undefined,
-    SUPABASE_ANON_KEY: undefined,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
   }, () => {
     assert.equal(isAuthTemporarilyDisabledForQa(), false);
     assert.equal(isPublicAuthAvailable(), true);
@@ -211,26 +193,16 @@ test("temporary QA auth disable cannot force production auth off", () => {
 
   withEnv({
     NODE_ENV: "production",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "true",
-    NEXT_PUBLIC_SUPABASE_URL: "http://example.supabase.co",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable",
+    VERCEL_ENV: "production",
+    NEXT_PUBLIC_VERCEL_ENV: "production",
+    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "false",
+    NEXT_PUBLIC_SUPABASE_URL: undefined,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: undefined,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
     SUPABASE_URL: undefined,
     SUPABASE_ANON_KEY: undefined,
   }, () => {
-    assert.equal(isPublicAuthAvailable(), false);
-    assert.equal(getPublicAuthState().mode, "misconfigured-production");
-  });
-
-  withEnv({
-    NODE_ENV: "production",
-    NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED: "true",
-    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: makeUnsignedJwt({ role: "service_role" }),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: undefined,
-    SUPABASE_URL: undefined,
-    SUPABASE_ANON_KEY: undefined,
-  }, () => {
+    assert.equal(isAuthTemporarilyDisabledForQa(), false);
     assert.equal(isPublicAuthAvailable(), false);
     assert.equal(getPublicAuthState().mode, "misconfigured-production");
   });

@@ -3,8 +3,9 @@ import {
   isProductionLikePublicRuntime,
 } from "./public-env";
 
-// Temporary QA switch: keep public flows open without sign-in outside production until auth is re-enabled.
-// Production must fail closed when Supabase auth is missing/misconfigured; do not hardcode this to true.
+// Temporary public/no-signup switch: keep public study flows open without sign-in until auth is re-enabled.
+// This intentionally applies in production for the current product policy.
+// Set NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED=false to re-enable configured Supabase auth.
 export type PublicAuthState =
   | { mode: "qa-disabled" }
   | { mode: "configured" }
@@ -12,8 +13,6 @@ export type PublicAuthState =
   | { mode: "misconfigured-production"; reason: string };
 
 export function isAuthTemporarilyDisabledForQa() {
-  if (isProductionLikePublicRuntime()) return false;
-
   const explicit = parseBooleanEnv(process.env["NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED"]);
   return explicit ?? true;
 }

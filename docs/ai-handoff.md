@@ -819,3 +819,43 @@ The initial no-signup hardening deploy was built from an older clean lane and re
 
 If merging this hotfix branch, preserve both the hardening changes and the restored landing-page `src/app/page.tsx` card markup.
 
+---
+
+Last updated: 2026-06-15 (emergency no-signup auth fix) · By: Codex
+
+## Production no-signup detail/PDF flows restored
+
+### Summary
+
+Fixed a production regression where expanding PYQs showed `Authentication is required but Supabase auth is not configured.` The hardening deploy had preserved production fail-closed auth behavior while production Supabase env is intentionally not configured because the current product policy is no signup/auth. Updated auth availability so the temporary public/no-signup bypass applies in production by default unless `NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED=false` is explicitly set.
+
+### Files changed
+
+- `src/lib/auth-availability.ts` — public/no-signup bypass now applies in production by default; explicit env `false` re-enables Supabase auth checks.
+- `src/lib/__tests__/security-hardening.test.ts` — updated auth-state tests to cover no-signup production default and explicit re-enable behavior.
+
+### Verification
+
+- `npm run lint -- src/lib/auth-availability.ts src/lib/__tests__/security-hardening.test.ts` — pass (one pre-existing unused helper warning removed in follow-up if desired).
+- `npx tsc --noEmit --pretty false` — pass.
+- `node --test --import tsx src/lib/__tests__/security-hardening.test.ts` — pass, 15/15.
+- Production deploy ready: `dpl_CRaGXy5xaJVErBPpJ3niRYzYjFoV`.
+- Live `https://www.upscat.click/` optional cards still contain `pyq-card group flex min-h-24`.
+- Direct `/api/search?...` returns 403.
+- Same-origin `/api/search?dataset=official&subject=gs1&q=tsunami&limit=1` returns 200.
+- Live official detail `/api/official-questions/pyq_gs1_c22d162a3613` returns 200 with relevant/topper data and no auth error.
+- `BASE_URL=https://www.upscat.click npm run smoke` — pass, 17/17.
+
+### Decisions
+
+- Current production policy is no-signup/no-auth. Do not fail closed on missing Supabase env while this policy is active.
+- To re-enable auth later, set `NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED=false` and configure Supabase env/migrations first.
+
+### Blockers
+
+- None for the emergency fix.
+
+### Exact next step
+
+Monitor live subject pages for expanded PYQ detail/PDF open flow. If auth is reintroduced later, configure Supabase before setting `NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED=false`.
+
