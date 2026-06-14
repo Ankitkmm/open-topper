@@ -23,6 +23,15 @@ const OPTIONAL_SUBJECTS: SubjectKey[] = [
   "history",
 ];
 
+const OPTIONAL_SUBJECT_ICONS: Partial<Record<SubjectKey, string>> = {
+  geography: "🌍",
+  sociology: "👥",
+  psir: "🌐",
+  "public-administration": "🏢",
+  anthropology: "🧬",
+  history: "📜",
+};
+
 const EXAMPLE_QUERIES = [
   "federalism",
   "ethical dilemma",
@@ -219,8 +228,11 @@ export default async function LandingPage() {
                 <Link
                   key={key}
                   href={subject.href}
-                  className="study-badge transition hover:border-[var(--accent-border)] hover:text-accent"
+                  className="study-badge min-h-11 gap-2 px-3 py-2 text-sm transition hover:border-[var(--accent-border)] hover:text-accent"
                 >
+                  <span className="text-[1.35rem] leading-none" aria-hidden="true">
+                    {OPTIONAL_SUBJECT_ICONS[key]}
+                  </span>
                   {subject.label}
                 </Link>
               );
