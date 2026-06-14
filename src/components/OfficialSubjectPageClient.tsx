@@ -69,7 +69,7 @@ export function OfficialSubjectPageClient({
           subject: subjectKey,
           query,
           syllabusId: selectedSyllabusId,
-          limit: 1000,
+          limit: 120,
         }), {
           cache: "no-store",
         });

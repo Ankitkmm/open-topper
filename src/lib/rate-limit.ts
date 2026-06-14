@@ -90,6 +90,5 @@ async function ensureRateLimitTable() {
 function clientIdentity(req: NextRequest) {
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const realIp = req.headers.get("x-real-ip")?.trim();
-  const ua = req.headers.get("user-agent")?.trim() || "unknown";
-  return [forwarded || realIp || "local", ua.slice(0, 120)].join("|");
+  return forwarded || realIp || "local";
 }

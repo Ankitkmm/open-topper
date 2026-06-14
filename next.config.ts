@@ -5,6 +5,7 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "no-referrer" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
   {
     key: "Content-Security-Policy",
     value: [
@@ -35,6 +36,7 @@ const pdfProxyHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "no-referrer" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
   {
     key: "Content-Security-Policy",
     value: [
@@ -98,6 +100,24 @@ const nextConfig: NextConfig = {
           ...apiSecurityHeaders,
           { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive, nosnippet, noimageindex" },
         ],
+      },
+      {
+        source: "/browse",
+        headers: [
+          ...apiSecurityHeaders,
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
+      {
+        source: "/vault",
+        headers: [
+          ...apiSecurityHeaders,
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
+      {
+        source: "/pdf/:path*",
+        headers: pdfProxyHeaders,
       },
       {
         source: "/api/answer-source/:answerId",

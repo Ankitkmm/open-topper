@@ -108,7 +108,7 @@ function SubjectWorkspaceView({
     }
 
     const controller = new AbortController();
-    const params = new URLSearchParams({ dataset: "workspace", subject: subjectKey, limit: "1000" });
+    const params = new URLSearchParams({ dataset: "workspace", subject: subjectKey, limit: "120" });
     if (query.trim()) params.set("q", query.trim());
     if (selectedSyllabusId) params.set("syllabusId", selectedSyllabusId);
 
