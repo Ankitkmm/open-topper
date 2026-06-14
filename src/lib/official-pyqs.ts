@@ -411,9 +411,13 @@ export function getOfficialQuestionDetail(questionId: string) {
 }
 
 export async function getOfficialQuestionDetailAsync(questionId: string) {
-  const row = (await loadOfficialRowsAsync()).find(
-    (item) => item.id === questionId,
-  );
+  const row =
+    (await loadOfficialRowsAsync()).find((item) => item.id === questionId) ||
+    // Static subject pages can contain pre-rendered official-row IDs from the
+    // local PYQ parsers while deployed API routes prefer the public runtime
+    // shards. Keep expanded cards working by falling back to the same local
+    // parser source used at build time when a runtime shard lacks that ID.
+    loadOfficialRows().find((item) => item.id === questionId);
   return row ? await toOfficialCardAsync(row) : null;
 }
 
@@ -423,9 +427,9 @@ export function getOfficialQuestionShell(questionId: string) {
 }
 
 export async function getOfficialQuestionShellAsync(questionId: string) {
-  const row = (await loadOfficialRowsAsync()).find(
-    (item) => item.id === questionId,
-  );
+  const row =
+    (await loadOfficialRowsAsync()).find((item) => item.id === questionId) ||
+    loadOfficialRows().find((item) => item.id === questionId);
   return row ? await toOfficialShellAsync(row) : null;
 }
 

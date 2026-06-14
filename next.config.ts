@@ -76,6 +76,11 @@ const nextConfig: NextConfig = {
       "data/pdf-runtime/answer-sources.json",
       "data/pdf-runtime/pdf-r2-map.json",
     ],
+    "/api/official-questions/\\[questionId\\]": [
+      "PYQS/**/*",
+      "data/app/public-official-pyq-links.json",
+      "data/app/workspace-index.json",
+    ],
   },
   outputFileTracingExcludes: {
     "/api/answer-source": [

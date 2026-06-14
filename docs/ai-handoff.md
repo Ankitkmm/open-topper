@@ -859,3 +859,42 @@ Fixed a production regression where expanding PYQs showed `Authentication is req
 
 Monitor live subject pages for expanded PYQ detail/PDF open flow. If auth is reintroduced later, configure Supabase before setting `NEXT_PUBLIC_TEMPORARY_QA_AUTH_DISABLED=false`.
 
+---
+
+Last updated: 2026-06-15 (emergency official-detail compatibility fix) · By: Codex
+
+## Official PYQ expansion restored after `Question not found` regression
+
+### Summary
+
+Fixed a production regression where pre-rendered GS subject cards expanded to `Question not found.` Static subject pages can contain local parser IDs such as `official_gs1_2025_1`, while async API routes prefer runtime `pyq_*` shards. The detail/shell async lookup now falls back to local official rows when a runtime shard misses the requested ID. Added Vercel tracing includes so the official-detail API bundle has the local PYQ and link data it needs.
+
+### Files changed
+
+- `src/lib/official-pyqs.ts` — `getOfficialQuestionDetailAsync()` and `getOfficialQuestionShellAsync()` now fall back to `loadOfficialRows()` for static/local IDs.
+- `next.config.ts` — includes `PYQS/**/*`, `data/app/public-official-pyq-links.json`, and `data/app/workspace-index.json` in the `/api/official-questions/[questionId]` trace.
+
+### Verification
+
+- `npm run lint -- src/lib/official-pyqs.ts next.config.ts src/app/api/official-questions/[questionId]/route.ts` — pass.
+- `npx tsc --noEmit --pretty false` — pass.
+- `npm run build` — pass.
+- Production deploy ready: `dpl_A5pYedEn4D271ZSWju4rQ46iU8aQ`.
+- Live `/gs1` contains Harappan, Akbar, and Chandella cards.
+- Live `GET /api/official-questions/official_gs1_2025_1` with same-origin headers returns 200, no error, 18 relevant groups.
+- Live `GET /api/official-questions/official_gs1_2025_2` returns 200, no error.
+- Live `GET /api/official-questions/official_gs1_2025_3` returns 200, no error, 18 relevant groups.
+- `BASE_URL=https://www.upscat.click npm run smoke` — pass, 17/17.
+
+### Decisions
+
+- Keep API backward-compatible with both static/local `official_*` IDs and runtime `pyq_*` IDs rather than rebuilding data under pressure.
+
+### Blockers
+
+- None for the emergency fix.
+
+### Exact next step
+
+After traffic is stable, consider unifying static subject shell generation and API runtime IDs so the fallback is a compatibility path, not a permanent primary path.
+
